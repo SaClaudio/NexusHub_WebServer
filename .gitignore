@@ -1,0 +1,42 @@
+﻿## Visual Studio / .NET padrão
+
+# Pastas do Visual Studio
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Build e binários
+bin/
+obj/
+Debug/
+Release/
+x64/
+x86/
+
+# Arquivos temporários
+*.log
+*.cache
+*.db
+*.vsidx
+
+# Configurações locais
+*.swp
+*.bak
+*.tmp
+*.pid
+*.seed
+
+# Testes e relatórios
+TestResults/
+*.coverage
+*.coveragexml
+
+# Pacotes NuGet
+*.nupkg
+packages/
+*.snupkg
+
+# Publicações
+publish/

@@ -1,0 +1,37 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.14.36915.13 d17.14
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NexusHub_WebServer", "NexusHub_WebServer.csproj", "{179AB8E5-DC48-4907-9050-534EE8682F02}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PriceMaker_MultTenant", "..\PriceMaker_MultTenant\PriceMaker_MultTenant.csproj", "{A1A0E0C3-C763-24AB-A0C5-584BF884187A}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PriceMaker_SharedLib", "..\PriceMaker_SharedLib\PriceMaker_SharedLib\PriceMaker_SharedLib.csproj", "{B6A95FD9-0803-EBD2-46A7-A49C91B8FF57}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{179AB8E5-DC48-4907-9050-534EE8682F02}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{179AB8E5-DC48-4907-9050-534EE8682F02}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{179AB8E5-DC48-4907-9050-534EE8682F02}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{179AB8E5-DC48-4907-9050-534EE8682F02}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A1A0E0C3-C763-24AB-A0C5-584BF884187A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A1A0E0C3-C763-24AB-A0C5-584BF884187A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A1A0E0C3-C763-24AB-A0C5-584BF884187A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A1A0E0C3-C763-24AB-A0C5-584BF884187A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B6A95FD9-0803-EBD2-46A7-A49C91B8FF57}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B6A95FD9-0803-EBD2-46A7-A49C91B8FF57}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B6A95FD9-0803-EBD2-46A7-A49C91B8FF57}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B6A95FD9-0803-EBD2-46A7-A49C91B8FF57}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {F2764D97-135D-496D-A377-905113C0D6FA}
+	EndGlobalSection
+EndGlobal
