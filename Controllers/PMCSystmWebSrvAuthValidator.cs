@@ -261,7 +261,7 @@ namespace NexusHub_WebServer.Controllers
                                 AuthMessage = tokenresultCheck.AuthMessage
                             };
                         }
-                        
+                        string xx = ";";
                         var gethandler = new JwtSecurityTokenHandler();
                         var jwtToken = gethandler.ReadJwtToken(decryptToken);
                         var userId = jwtToken.Claims.FirstOrDefault(c => c.Type == "userid")?.Value;
