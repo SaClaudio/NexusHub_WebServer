@@ -46,6 +46,7 @@ using System.Net.WebSockets;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading.Tasks;
+using static PriceMaker_SharedLib.Models.PMCSystmConstants;
 
 [ApiController]
 [Route("nexushub-webserver")]
@@ -57,51 +58,59 @@ public class PMCSystmWebServerController : ControllerBase
     private readonly PMCSystmTraceCenter _trcCenter;
     private readonly PMCSystmWebSrvAuthValidator _authValidator;
     private readonly PMCSystmWebSrvProdService _prodService;
+    private readonly IHttpContextAccessor _httpContextAccessor;
 
     public PMCSystmWebServerController(
         IConfiguration config,
         PMCSystmLogCenter logCenter,
         PMCSystmTraceCenter trcCenter,
         PMCSystmWebSrvAuthValidator authValidator,
-        PMCSystmWebSrvProdService prodService)
+        PMCSystmWebSrvProdService prodService,
+        IHttpContextAccessor httpContextAccessor)
     {
         _config = config;
         _logCenter = logCenter;
         _trcCenter = trcCenter;
         _authValidator = authValidator;
         _prodService = prodService;
+        _httpContextAccessor = httpContextAccessor;
     }
-
-
     private string className = "PMCSystmWebServer";
-    private string methodName = "Get";
+    private string methodName = "Login";
 
     [HttpPost("login")]
-    public async Task<IActionResult> Login()
+    public async Task<IActionResult> Login([FromBody] PMCSystmWebSrvRequest body)
     {
-        string ipAddr = Environment.MachineName;
+        string ipAddr = PMCSystmGtIP.GetIpAddress(_httpContextAccessor);
         try
         {
            
             var requestDto = new PMCSystmWebSrvRequest
             {
-                Token = Request.Headers["Token"].FirstOrDefault(),
-                Password = Request.Headers["Password"].FirstOrDefault(),
-                Endpoint = Request.Headers["Endpoint"].FirstOrDefault(),
-                Protocol = Request.Headers["Protocol"].FirstOrDefault()
+                Password = body.Password,   // senha vem do corpo
+                Endpoint = body.Endpoint,
+                Protocol = body.Protocol
             };
 
             var requestToAuth = new PMCSystmWebSrvAuthRequest
             {
                 AuthFunction = "login",
-                AuthToken = requestDto.Token,
+                AuthToken = Request.Headers["Authorization"].FirstOrDefault(),
                 AuthPassword = requestDto.Password,
                 AuthEndpoint = requestDto.Endpoint,
                 AuthProtocol = requestDto.Protocol,
                 AuthIpaddr = ipAddr
             };
-            
+
             var websrvresponse = new PMCSystmWebSrvResp();
+            if (requestDto.Endpoint != PMCSystmConstants.WebsrvEndpointLogin)           // Se não for "login", então tem erro
+            {
+                websrvresponse.WebSrvRetCode = (int)WebServerRetCodes.Endpointinvldroute;
+                websrvresponse.WebSrvRetMessage = PMCSystmMsgC.PMMmessagecenter(59, 27)
+                    .Replace("...", PMCSystmConstants.WebsrvEndpointLogin);
+                return BadRequest(websrvresponse);
+            }
+                        
             var validationResponse = await _authValidator.ValidateAsync(requestToAuth);
 
             websrvresponse.WebSrvRetCode = validationResponse.AuthCode;
@@ -113,48 +122,24 @@ public class PMCSystmWebServerController : ControllerBase
                 return BadRequest(websrvresponse);
             }
 
-            // Encaminha para o endpoint
-            switch (requestDto.Endpoint)
-            {
-                case "products":
-                    var productResponse = await _prodService.GetProdAsync(validationResponse.AuthTenant,
-                        requestDto.Protocol);
+            _ = Task.Run(() => _logCenter.PMMWpmLgCore(3,
+               ipAddr,
+               PMCSystmConstants.OriginWebServer,
+               className,
+               methodName,
+               PMCSystmMsgC.PMMmessagecenter(21, 632)
+                        .Replace("...",validationResponse.AuthOtherData)
+                        .Replace("iii", ipAddr),
+               _config));
+            websrvresponse.WebSrvRetMessage = PMCSystmMsgC.PMMmessagecenter(59, 28);            
+            return Ok(websrvresponse);
 
-                    var jsonOptions = new JsonSerializerOptions
-                    {
-                        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-                        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-                        WriteIndented = false
-                    };
-
-                    websrvresponse.WebSrvRetData = JsonSerializer.Serialize(productResponse, jsonOptions);
-
-                    return Ok(websrvresponse);
-
-                case "reports":
-                    websrvresponse.WebSrvRetCode = (int)PMCSystmConstants.WebServerRetCodes.Endpointunavailable;
-                    websrvresponse.WebSrvRetMessage = PMCSystmMsgC.PMMmessagecenter(59, 25);
-                    return BadRequest(websrvresponse);
-
-                default:
-                    _ = Task.Run(() => _logCenter.PMMWpmLgCore(2,
-                        ipAddr,
-                        " ",
-                        className,
-                        methodName,
-                        PMCSystmMsgC.PMMmessagecenter(21, 621) + requestDto.Endpoint,
-                        _config));
-
-                    websrvresponse.WebSrvRetCode = (int)PMCSystmConstants.WebServerRetCodes.Endpointunavailable;
-                    websrvresponse.WebSrvRetMessage = PMCSystmMsgC.PMMmessagecenter(59, 25);
-                    return BadRequest(websrvresponse);
-            }
         }
         catch (Exception ex)
         {
             _ = Task.Run(() => _logCenter.PMMWpmLgCore(1,
                 ipAddr,
-                "locals",
+                PMCSystmConstants.OriginWebServer,
                 className,
                 methodName,
                 PMCSystmMsgC.PMMmessagecenter(21, 627) + ex.Message,

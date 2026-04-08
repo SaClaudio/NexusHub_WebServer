@@ -34,6 +34,7 @@ namespace NexusHub_WebServer.Controllers
     using Microsoft.EntityFrameworkCore.Storage.ValueConversion.Internal;
     using Newtonsoft.Json.Linq;
     using Org.BouncyCastle.Asn1.Ocsp;
+    using Org.BouncyCastle.Asn1.Pkcs;
     using Org.BouncyCastle.Ocsp;
     using PriceMaker_MultTenant.Programs;
     using PriceMaker_MultTenant.SystemIO;
@@ -73,7 +74,7 @@ namespace NexusHub_WebServer.Controllers
 
         public async Task<PMCSystmWebSrvAuthResp> ValidateAsync(PMCSystmWebSrvAuthRequest request)
         {
-            ipaddr = Environment.MachineName;
+            ipaddr = request.AuthIpaddr ;
             int auxAuthCode = (int)WebServerRetCodes.LoggedinOk;       // Assume que login vai dar ok
             string methodName = "ValidateAsync";
             
@@ -123,7 +124,18 @@ namespace NexusHub_WebServer.Controllers
                         AuthMessage = PMCSystmMsgC.PMMmessagecenter(59, 2)
                     };
                 }
+                /*--- Verifica se o Token está no formato Bearer ---*/
+                if (!request.AuthToken.StartsWith("Bearer "))
+                {
+                    return new PMCSystmWebSrvAuthResp
+                    {
+                        AuthCode = (int)WebServerRetCodes.TokenInvalidFormat,
+                        AuthMessage = PMCSystmMsgC.PMMmessagecenter(59, 29) // mensagem específica para formato inválido
+                    };
+                }
 
+                // Se chegou até aqui, remove o prefixo "Bearer " e normaliza
+                request.AuthToken = request.AuthToken.Substring("Bearer ".Length).Trim();
                 /*--- Verifica se tem Senha no Header ---*/
                 if (string.IsNullOrEmpty(request.AuthPassword))
                 {
@@ -288,11 +300,10 @@ namespace NexusHub_WebServer.Controllers
                             PMCSystmConstants.OriginWebServer);
                         string userName = string.Empty;
 
-                        switch (identityrc[0])
+                        switch (identityrc.ReturnCode)
                         {
                             case "0":     /* Ok, usuário encontrado e ativo */
-                                AQUI TEM QUE Aplica split DE identityrc[2] para fatiar os dados do assinante e validar se tipo de assinatura é compatível com acesso ao web server. Se tudo ok, seta tenantName e userName para criar sessão web server */
-                                userName = identityrc[38];          // UserName (normalmente email)
+                                userName = identityrc.identityUsr_UserName;         // UserName (normalmente email)
                                 break;
                             case "1":     /* Usuário não encontrado */
                                 _ = _coreDI.LogCore.PMMWpmLgCore(3,
@@ -316,25 +327,8 @@ namespace NexusHub_WebServer.Controllers
                                 };
                         }
                         /*---------- Valida se perfil do assinante está habilitado para usar web server -----------*/
-
-                        string[] datavalues = identityrc[2].Split(new char[1] { '‡' }); /* |Fatora dados do assinante */
-
-                        if (datavalues.Length == 0)         /* Se não retornou nada - inválido */
-                        {
-                            _ = _coreDI.LogCore.PMMWpmLgCore(2,
-                                    ipaddr,
-                                    PMCSystmConstants.OriginWebServer,
-                                    className,
-                                    methodName,
-                                    PMCSystmMsgC.PMMmessagecenter(21, 632) + userName,
-                                   _coreDI.Configuration);
-                            return new PMCSystmWebSrvAuthResp
-                            {
-                                AuthCode = (int)WebServerRetCodes.InternalError,
-                                AuthMessage = PMCSystmMsgC.PMMmessagecenter(59, 7)
-                            };
-                        }
-                        int subtype = Convert.ToInt32(datavalues[2]);
+                                                
+                        int subtype = Convert.ToInt32(identityrc.identityUsr_Type);
                         switch (subtype)      /* Analise tipo de assinante */
                         {
                             case PMCSystmFlags.Pm_subtype_subscriber_trialadmin:     /* Tipo de assinante válido para sessão web server */
@@ -357,7 +351,7 @@ namespace NexusHub_WebServer.Controllers
                                 };
                         }
 
-                        int subacctype = Convert.ToInt32(datavalues[5]);
+                        int subacctype = Convert.ToInt32(identityrc.identityUsr_AcctType);
                         switch (subacctype)      /* Analise situação quanto ao acesso (acctype do identity) */
                         {
                             case PMCSystmFlags.Pm_subscriber_acctype_trial:     /* Acesso ok */
@@ -405,11 +399,11 @@ namespace NexusHub_WebServer.Controllers
                                     AuthMessage = PMCSystmMsgC.PMMmessagecenter(59, 8)
                                 };
                         }
-                        int subscriptiontype = Convert.ToInt32(datavalues[7]);
+                        int subscriptiontype = Convert.ToInt32(identityrc.identityUsr_FlgSubType);
                         switch (subscriptiontype)      /* Analise tipo de assinatura (somente Premium ou Trial) */
                         {
-                            case PMCSystmFlags.Pm_subscriber_type_premium:     /* Acesso ok */
-
+                            case PMCSystmFlags.Pm_subscriber_type_premium:      /* Assinatura Premium - Acesso ok */
+                            case PMCSystmFlags.Pm_subscriber_type_trial:        /* Trial - Acesso ok */ 
                                 break;
 
                             default:
@@ -418,7 +412,7 @@ namespace NexusHub_WebServer.Controllers
                                    PMCSystmConstants.OriginWebServer,
                                    className,
                                    methodName,
-                                   PMCSystmMsgC.PMMmessagecenter(21, 635) + userName,
+                                   PMCSystmMsgC.PMMmessagecenter(21, 633) + userName,
                                   _coreDI.Configuration);
                                 return new PMCSystmWebSrvAuthResp
                                 {
@@ -473,11 +467,20 @@ namespace NexusHub_WebServer.Controllers
                             break;
 
                         }
+                        /*---------------------------------------------------------------------*/
+                        /* Grava entrada inicial no Trace                                      */
+                        /*---------------------------------------------------------------------*/
+
+                        traceMsg.MsgTxt = PMCSystmMsgC.PMMmessagecenter(0, 54);
+                        traceMsg.MsgData = auxAuthCode + " # " +
+                            userName;
+                        _ = _coreDI.TrcCore.PMMWTrGlobal(traceMsg);
 
                         return new PMCSystmWebSrvAuthResp
                         {
                             AuthCode = auxAuthCode,
-                            AuthMessage = PMCSystmMsgC.PMMmessagecenter(59, 7)
+                            AuthMessage = PMCSystmMsgC.PMMmessagecenter(59, 7),
+                            AuthOtherData = userName
                         };
                     
                     case "process":             // Função "process"
