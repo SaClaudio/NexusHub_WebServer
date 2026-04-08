@@ -250,7 +250,7 @@ namespace NexusHub_WebServer.Controllers
                         }
                         /*--------- Senha está ok. Valida token informado no request ---*/
 
-                        string tokenatDB = resultData[7];          // Token armazenado na BD de configuraç~so do assinante
+                        string tokenatDB = resultData[8];          // Token armazenado na BD de configuraç~so do assinante
                         tokenresultCheck = await CheckToken(request.AuthToken);
                         if (tokenresultCheck.AuthCode != (int)WebServerRetCodes.OK &&
                             tokenresultCheck.AuthCode != (int)WebServerRetCodes.TokenWillExpire)
@@ -261,10 +261,9 @@ namespace NexusHub_WebServer.Controllers
                                 AuthMessage = tokenresultCheck.AuthMessage
                             };
                         }
-                        string xx = ";";
                         var gethandler = new JwtSecurityTokenHandler();
-                        var jwtToken = gethandler.ReadJwtToken(decryptToken);
-                        var userId = jwtToken.Claims.FirstOrDefault(c => c.Type == "userid")?.Value;
+                        var jwtToken = gethandler.ReadJwtToken(tokenresultCheck.AuthTokenOriginal);
+                        var userId = jwtToken.Claims.FirstOrDefault(c => c.Type == "keyid")?.Value;
                         auxAuthCode = tokenresultCheck.AuthCode;     // Pode ser OK ou TokenWillExpire, mas é o que tem para esse cenário
 
                         if (tokenresultCheck.AuthTokenOriginal != tokenatDB)        /* Se token não é igual ao gerado anteriormente */
@@ -283,12 +282,16 @@ namespace NexusHub_WebServer.Controllers
                         dbParm = "1" + "‡" + userId;
 
                         // Chama o driver de Identity
-                        var (identityuser, identityrc) = await _identityIO.PMMIOdriver(dbParm, className, methodName);
+                        var (identityuser, identityrc) = await _identityIO.PMMIOdriver(dbParm,
+                            className,
+                            methodName,
+                            PMCSystmConstants.OriginWebServer);
                         string userName = string.Empty;
 
                         switch (identityrc[0])
                         {
                             case "0":     /* Ok, usuário encontrado e ativo */
+                                AQUI TEM QUE Aplica split DE identityrc[2] para fatiar os dados do assinante e validar se tipo de assinatura é compatível com acesso ao web server. Se tudo ok, seta tenantName e userName para criar sessão web server */
                                 userName = identityrc[38];          // UserName (normalmente email)
                                 break;
                             case "1":     /* Usuário não encontrado */
