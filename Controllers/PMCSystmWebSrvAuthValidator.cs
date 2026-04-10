@@ -1,33 +1,44 @@
-﻿/*-------------------------------------- Descrição -----------------------------------*/
-/*                                                                                    */
-/* FUNÇÃO: Responsável por validar autenticação das requisições recebidas pelo        */
-/*         Web Server do NexusHub. Centraliza a lógica de verificação dos headers     */
-/*         obrigatórios (Token, Password, Endpoint, Protocolo) e confronta credenciais*/
-/*         com os dados do Tenant.                                                    */
-/*                                                                                    */
-/* CLASSE: PMCSystmWebSrvAuthValidator                                                */
-/*                                                                                    */
-/* MÉTODOS:                                                                           */
-/*         - ValidateAsync: Executa validação completa da requisição                  */
-/*                          → Verifica presença dos headers obrigatórios              */
-/*                          → Confronta Token e Password com dados do Tenant          */
-/*                          → Valida Endpoint e Protocolo                             */
-/*                          → Retorna objeto PMCSystmWebSrvAuthResp com resultado     */
-/*                                                                                    */
-/* RETORNO:                                                                           */
-/*         - Objeto PMCSystmWebSrvAuthResp contendo código de status e mensagem       */
-/*           de validação (sucesso ou erro).                                          */
-/*                                                                                    */
-/* NOTAS:                                                                             */
-/*         - Controller apenas monta o DTO PMCSystmWebSrvRequest e delega a validação */
-/*           ao AuthValidator.                                                        */
-/*         - Toda a lógica de autenticação fica centralizada nesta classe.            */
-/*         - Instanciação direta (sem DI) garante controle explícito do fluxo.        */
-/*         - Facilita manutenção e evolução futura (novos headers ou regras).         */
-/*         - Códigos de retorno mapeados em PMCSYStmConstants -> WebServerRetCodes    */
-/*           e retornados na DTO PMCSystmWebSrvAuthResp                               */
-/*                                                                                    */
-/*------------------------------------------------------------------------------------*/
+﻿/*-------------------------------------------------------------------------------------------*/
+/* Descrição                                                                                 */
+/*                                                                                           */
+/* FUNÇÃO: Classe responsável por validar autenticação das requisições recebidas pelo        */
+/*         Web Server do NexusHub. Centraliza a lógica de verificação dos headers            */
+/*         obrigatórios (Token, Password, Endpoint, Protocolo) e confronta credenciais       */
+/*         com os dados do Tenant e do Identity.                                             */
+/*                                                                                           */
+/* CLASSE: PMCSystmWebSrvAuthValidator                                                       */
+/*                                                                                           */
+/* MÉTODOS:                                                                                  */
+/*         - ValidateAsync:                                                                  */
+/*             → Verifica presença e formato dos headers obrigatórios                        */
+/*             → Normaliza token (Bearer) e valida contra BD/Identity                        */
+/*             → Confronta senha informada com composição esperada                           */
+/*             → Valida Endpoint e Protocolo                                                 */
+/*             → Checa se token já possui sessão ativa ou se login já foi feito              */
+/*             → Cria/atualiza entrada no dicionário de sessões (PMCDataWebSrvSessions)      */
+/*             → Retorna objeto PMCSystmWebSrvAuthResp com resultado da validação            */
+/*                                                                                           */
+/*         - CheckToken:                                                                     */
+/*             → Decriptografa token recebido                                                */
+/*             → Valida assinatura, expiração e consistência                                 */
+/*             → Retorna objeto PMCSystmWebSrvAuthResp com status e token original           */
+/*                                                                                           */
+/*         - CheckTokenPassword:                                                             */
+/*             → Valida senha composta (tenantName + userName + dataHora)                    */
+/*             → Retorna objeto PasswordValidationResp com sucesso ou mensagem de erro       */
+/*                                                                                           */
+/* RETORNO:                                                                                  */
+/*         - Objeto PMCSystmWebSrvAuthResp contendo código de status, mensagem e dados       */
+/*           adicionais (usuário, tenant, token).                                            */
+/*                                                                                           */
+/* NOTAS:                                                                                    */
+/*         - Toda a lógica de autenticação fica centralizada nesta classe.                   */
+/*         - Controller apenas monta o DTO PMCSystmWebSrvRequest e delega a validação.       */
+/*         - Sessões são controladas pelo dicionário PMCDataWebSrvSessions.                  */
+/*         - Logs e traces são registrados via PMCSystmLogCore e PMCSystmTrcCore.            */
+/*         - Retornos seguem códigos mapeados em PMCSystmConstants -> WebServerRetCodes.     */
+/*-------------------------------------------------------------------------------------------*/
+
 
 namespace NexusHub_WebServer.Controllers
 {
@@ -57,6 +68,11 @@ namespace NexusHub_WebServer.Controllers
         public PMCSystmWebSrvAuthValidator(PMCSystmCoreDI core)
         {
             _coreDI = core;
+        }
+        public class PasswordValidationResp
+        {
+            public bool Success { get; set; }
+            public string ErrorMessage { get; set; } = string.Empty;
         }
         private string tenantName;        /* Prefixo do nome do tenant do assinante */
         private string DecryptedRequestPassword;      // Senha decriptografada do Request
@@ -109,7 +125,7 @@ namespace NexusHub_WebServer.Controllers
                 {
                     return new PMCSystmWebSrvAuthResp
                     {
-                        AuthCode = (int)WebServerRetCodes.LoginRequerid,
+                        AuthCode = (int)WebServerRetCodes.LoginRequired,
                         AuthMessage = PMCSystmMsgC.PMMmessagecenter(59, 20)
                     };
                 }
@@ -136,16 +152,7 @@ namespace NexusHub_WebServer.Controllers
 
                 // Se chegou até aqui, remove o prefixo "Bearer " e normaliza
                 request.AuthToken = request.AuthToken.Substring("Bearer ".Length).Trim();
-                /*--- Verifica se tem Senha no Header ---*/
-                if (string.IsNullOrEmpty(request.AuthPassword))
-                {
-                    return new PMCSystmWebSrvAuthResp
-                    {
-                        AuthCode = (int)WebServerRetCodes.PasswordMissing,
-                        AuthMessage = PMCSystmMsgC.PMMmessagecenter(59, 2)
-                    };
-                }
-
+                
                 /*--- Verifica se tem Endpoint no Header ---*/
                 if (string.IsNullOrEmpty(request.AuthEndpoint))
                 {
@@ -155,7 +162,7 @@ namespace NexusHub_WebServer.Controllers
                         AuthMessage = PMCSystmMsgC.PMMmessagecenter(59, 3)
                     };
                 }
-
+                
                 /*--- Verifica se tem Protocol no Header ---*/
                 if (string.IsNullOrEmpty(request.AuthProtocol))
                 {
@@ -165,127 +172,66 @@ namespace NexusHub_WebServer.Controllers
                         AuthMessage = PMCSystmMsgC.PMMmessagecenter(59, 1)
                     };
                 }
-                /*--------- Faz avaliação Cross Headers */
+                /*--------- Faz avaliação cruzada quanto ao uso da senha por endpoint. Só aceita se for login */
 
-                if (functionlower != "login" && !string.IsNullOrEmpty(request.AuthPassword))
+                if (functionlower != PMCSystmConstants.WebsrvEndpointLogin && !string.IsNullOrEmpty(request.AuthPassword))
                 {
                     return new PMCSystmWebSrvAuthResp
                     {
                         AuthCode = (int)WebServerRetCodes.CrossHeaderRejtPsw,
-                        AuthMessage = PMCSystmMsgC.PMMmessagecenter(59, 1)
+                        AuthMessage = PMCSystmMsgC.PMMmessagecenter(59, 30)
                     };
 
                 }
 
-                /*----------- Encaminha atendimento da função passada em Function -------------*/
+                /*---------------------------- Faz validação do Token -------------------------*/
+
                 var tokenresultCheck = new PMCSystmWebSrvAuthResp();
+                tokenresultCheck = await CheckToken(request.AuthToken);
+                if (tokenresultCheck.AuthCode != (int)WebServerRetCodes.OK &&
+                    tokenresultCheck.AuthCode != (int)WebServerRetCodes.TokenWillExpire)
+                {
+                    return new PMCSystmWebSrvAuthResp
+                    {
+                        AuthCode = tokenresultCheck.AuthCode,
+                        AuthMessage = tokenresultCheck.AuthMessage
+                    };
+                }
+                var gethandler = new JwtSecurityTokenHandler();
+                var jwtToken = gethandler.ReadJwtToken(tokenresultCheck.AuthTokenOriginal);
+                var userId = jwtToken.Claims.FirstOrDefault(c => c.Type == "keyid")?.Value;
+                auxAuthCode = tokenresultCheck.AuthCode;     // Pode ser OK ou TokenWillExpire, mas é o que tem para esse cenário
+
+                if (functionlower != PMCSystmConstants.WebsrvEndpointLogin)       /* Se não for função de login, valida se token tem sessão ativa no dicionário de sessões do web server */
+                {
+                    if (!PMCDataWebSrvSessions.TokenExists(tokenresultCheck.AuthTokenOriginal))
+                    {
+                        return new PMCSystmWebSrvAuthResp
+                        {
+                            AuthCode = (int)WebServerRetCodes.LoginRequired,
+                            AuthMessage = PMCSystmMsgC.PMMmessagecenter(59, 31)
+                        };
+                    }
+
+                }
+
+                if (functionlower == PMCSystmConstants.WebsrvEndpointLogin)       /* Se for função de login, valida se já foi feito login antes */
+                {
+                    if (PMCDataWebSrvSessions.TokenExists(tokenresultCheck.AuthTokenOriginal))
+                    {
+                        return new PMCSystmWebSrvAuthResp
+                        {
+                            AuthCode = (int)WebServerRetCodes.LoginActive,
+                            AuthMessage = PMCSystmMsgC.PMMmessagecenter(59, 32)
+                        };
+                    }
+
+                }
+                /*----------- Encaminha atendimento da função passada em Function -------------*/
 
                 switch (functionlower)
                 {
                     case "login":               // Função "Login"
-
-                        /*--------------------------------- Valida senha informada no request --------------------------------*/
-                        /* Composição da senha: tamanho do tenantName + tenantName (completo) + dataHora que foi criada no UI */
-                        /*----------------------------------------------------------------------------------------------------*/
-                        // Instancia PMCSystmEnDe passando IConfiguration e a config já populada
-                        PMCSystmEnDe newende = new PMCSystmEnDe(_coreDI.Configuration);
-
-                        // Agora chama o método Decrypt normalmente
-                        DecryptedRequestPassword = newende.Decrypt(
-                            className,
-                            methodName,
-                            ipaddr,
-                            request.AuthPassword
-                        );
-                        
-
-                        if (DecryptedRequestPassword == "#error")
-                        {
-                            return new PMCSystmWebSrvAuthResp
-                            {
-                                AuthCode = (int)WebServerRetCodes.InternalError,
-                                AuthMessage = PMCSystmMsgC.PMMmessagecenter(59, 7)
-                            };
-                        }
-
-                        int lentntnm = Convert.ToInt32(DecryptedRequestPassword.Substring(0, 2));   /*-- tamanho do prefixo do nome do Tenant ---*/
-                        tenantName = DecryptedRequestPassword.Substring(2, lentntnm);
-                        dbParm = "0" + "‡" + tenantName;
-
-                        var(resultData, resultObjt) = await driverIO.PMMIOdriver(dbParm,
-                            className,
-                            methodName,
-                            PMCSystmConstants.OriginWebServer);
-
-                        if (resultData[0] != "0")       /* Se deu erro no acesso ao mysql/tenant */
-                        {
-                            return new PMCSystmWebSrvAuthResp
-                            {
-                                AuthCode = (int)WebServerRetCodes.InternalError,
-                                AuthMessage = PMCSystmMsgC.PMMmessagecenter(59, 7)
-                            };
-                        }
-                        if (resultData[1] == "0")       /* Codigo de retorno normal porém , sem dados. Erro de sincronismo. Impossível */
-                        {
-                            _ = _coreDI.LogCore.PMMWpmLgCore(2,
-                                ipaddr,
-                                PMCSystmConstants.OriginWebServer,
-                                className,
-                                methodName,
-                                PMCSystmMsgC.PMMmessagecenter(21, 622) + tenantName,
-                                _coreDI.Configuration);
-                            return new PMCSystmWebSrvAuthResp
-                            {
-                                AuthCode = (int)WebServerRetCodes.InternalError,
-                                AuthMessage = PMCSystmMsgC.PMMmessagecenter(59, 7)
-                            };
-                        }
-
-                        DecryptedRequestPasswordDb = newende.Decrypt("PMCWebserver", "GetAsync", "???.?.?.?", resultData[2]);
-
-                        if (DecryptedRequestPasswordDb == "#error")
-                        {
-                            return new PMCSystmWebSrvAuthResp
-                            {
-                                AuthCode = (int)WebServerRetCodes.InternalError,
-                                AuthMessage = PMCSystmMsgC.PMMmessagecenter(59, 7)
-                            };
-                        }
-
-                        if (DecryptedRequestPassword != DecryptedRequestPasswordDb)         /* Se senha no request x tentant não bater */
-                        {
-                            return new PMCSystmWebSrvAuthResp
-                            {
-                                AuthCode = (int)WebServerRetCodes.PasswordMismatch,
-                                AuthMessage = PMCSystmMsgC.PMMmessagecenter(59, 6)
-                            };
-                        }
-                        /*--------- Senha está ok. Valida token informado no request ---*/
-
-                        string tokenatDB = resultData[8];          // Token armazenado na BD de configuraç~so do assinante
-                        tokenresultCheck = await CheckToken(request.AuthToken);
-                        if (tokenresultCheck.AuthCode != (int)WebServerRetCodes.OK &&
-                            tokenresultCheck.AuthCode != (int)WebServerRetCodes.TokenWillExpire)
-                        {
-                            return new PMCSystmWebSrvAuthResp
-                            {
-                                AuthCode = tokenresultCheck.AuthCode,
-                                AuthMessage = tokenresultCheck.AuthMessage
-                            };
-                        }
-                        var gethandler = new JwtSecurityTokenHandler();
-                        var jwtToken = gethandler.ReadJwtToken(tokenresultCheck.AuthTokenOriginal);
-                        var userId = jwtToken.Claims.FirstOrDefault(c => c.Type == "keyid")?.Value;
-                        auxAuthCode = tokenresultCheck.AuthCode;     // Pode ser OK ou TokenWillExpire, mas é o que tem para esse cenário
-
-                        if (tokenresultCheck.AuthTokenOriginal != tokenatDB)        /* Se token não é igual ao gerado anteriormente */
-                        {
-                            return new PMCSystmWebSrvAuthResp
-                            {
-                                AuthCode = (int)PMCSystmConstants.WebServerRetCodes.TokenInvalidMismatch,
-                                AuthMessage = gtknresult[2]
-                            };
-                        }
 
                         /*---------- Acessa assinante em Identity pelo keyid que vem no header do token -----------*/
 
@@ -326,8 +272,39 @@ namespace NexusHub_WebServer.Controllers
                                     AuthMessage = PMCSystmMsgC.PMMmessagecenter(59, 7)
                                 };
                         }
+
+                        
+                        /*--------------------------------- Valida senha informada no request --------------------------------*/
+                        /* Composição da senha: tamanho do tenantName + tenantName (completo) + dataHora que foi criada no UI */
+                        /*----------------------------------------------------------------------------------------------------*/
+                        
+                        var resp = CheckTokenPassword(request.AuthPassword, identityrc.identityUsr_TenantName, userName);
+
+                        if (!resp.Success)
+                        {
+                            return new PMCSystmWebSrvAuthResp
+                            {
+                                AuthCode = (int)WebServerRetCodes.PasswordMismatch,
+                                AuthMessage = resp.ErrorMessage
+                            };
+                        }
+
+                        /*--------- Verifica se token informado no request é o mesmo que está na BD ---*/
+
+                        auxAuthCode = tokenresultCheck.AuthCode;     // Pode ser OK ou TokenWillExpire, mas é o que tem para esse cenário
+
+                        if (tokenresultCheck.AuthTokenOriginal != identityrc.identityUsr_TokenWebServer)        /* Se token não é igual ao gerado anteriormente */
+                        {
+                            return new PMCSystmWebSrvAuthResp
+                            {
+                                AuthCode = (int)PMCSystmConstants.WebServerRetCodes.TokenInvalidMismatch,
+                                AuthMessage = gtknresult[2]
+                            };
+                        }
+
+
                         /*---------- Valida se perfil do assinante está habilitado para usar web server -----------*/
-                                                
+
                         int subtype = Convert.ToInt32(identityrc.identityUsr_Type);
                         switch (subtype)      /* Analise tipo de assinante */
                         {
@@ -422,11 +399,11 @@ namespace NexusHub_WebServer.Controllers
                         }
                         /*---------- Verifica se já existe uma sessão web server prévia ----------*/
                         
-                        string ipaddrDict = PMCDataWebSrvSessions.GetIpByToken(request.AuthToken);
+                        string ipaddrDict = PMCDataWebSrvSessions.GetIpByToken(tokenresultCheck.AuthTokenOriginal);
 
                         if (!string.IsNullOrEmpty(ipaddrDict))          // Se já existe um token registrado, verifica se IP é o mesmo. Se for o mesmo, mantém sessão. Se for diferente, bloqueia acesso (possível roubo de token)
                         {
-                            if (!PMCDataWebSrvSessions.ValidateTokenAndIp(request.AuthToken, request.AuthIpaddr))   /* Se token existe mas IP é diferente, bloqueia acesso */
+                            if (!PMCDataWebSrvSessions.ValidateTokenAndIp(tokenresultCheck.AuthTokenOriginal, request.AuthIpaddr))   /* Se token existe mas IP é diferente, bloqueia acesso */
                             {
                                 _ = _coreDI.LogCore.PMMWpmLgCore(3,
                                    ipaddr,
@@ -440,32 +417,30 @@ namespace NexusHub_WebServer.Controllers
                                     AuthCode = (int)WebServerRetCodes.TokenInvalidMismatch,
                                     AuthMessage = PMCSystmMsgC.PMMmessagecenter(59, 2)
                                 };
-                            }
-                            /*---------- Cria ou  atualiza entrada da sessão no dicionário de sessão web server ----------*/
-                            var websrvSessDict = PMCDataWebSrvSessions.AddToken(request.AuthToken,
-                            request.AuthIpaddr,
-                            tenantName,
-                            userName,
-                            subtype,
-                            userId);
+                            }                            
+                        }
+                        /*---------- Cria ou  atualiza entrada da sessão no dicionário de sessão web server ----------*/
+                        var websrvSessDict = PMCDataWebSrvSessions.AddToken(tokenresultCheck.AuthTokenOriginal,
+                        request.AuthIpaddr,
+                        tenantName,
+                        userName,
+                        subtype,
+                        userId);
 
-                            if (websrvSessDict[0] != "0")           // Se retornou erro
+                        if (websrvSessDict[0] != "0")           // Se retornou erro
+                        {
+                            _ = _coreDI.LogCore.PMMWpmLgCore(2,
+                                   ipaddr,
+                                   PMCSystmConstants.OriginWebServer,
+                                   className,
+                                   methodName,
+                                   PMCSystmMsgC.PMMmessagecenter(21, 636).Replace("...", "AddToken"),
+                                  _coreDI.Configuration);
+                            return new PMCSystmWebSrvAuthResp
                             {
-                                _ = _coreDI.LogCore.PMMWpmLgCore(2,
-                                       ipaddr,
-                                       PMCSystmConstants.OriginWebServer,
-                                       className,
-                                       methodName,
-                                       PMCSystmMsgC.PMMmessagecenter(21, 636).Replace("...", "AddToken"),
-                                      _coreDI.Configuration);
-                                return new PMCSystmWebSrvAuthResp
-                                {
-                                    AuthCode = (int)WebServerRetCodes.InternalError,
-                                    AuthMessage = PMCSystmMsgC.PMMmessagecenter(59, 7)
-                                };
-                            }
-                            break;
-
+                                AuthCode = (int)WebServerRetCodes.InternalError,
+                                AuthMessage = PMCSystmMsgC.PMMmessagecenter(59, 7)
+                            };
                         }
                         /*---------------------------------------------------------------------*/
                         /* Grava entrada inicial no Trace                                      */
@@ -482,25 +457,13 @@ namespace NexusHub_WebServer.Controllers
                             AuthMessage = PMCSystmMsgC.PMMmessagecenter(59, 7),
                             AuthOtherData = userName
                         };
-                    
-                    case "process":             // Função "process"
-                                                // 🔹 Garante que ExtConfig está populado
-                        tokenresultCheck = await CheckToken(request.AuthToken);
-                        if (tokenresultCheck.AuthCode != (int)WebServerRetCodes.OK &&
-                            tokenresultCheck.AuthCode != (int)WebServerRetCodes.TokenWillExpire)
-                        {
-                            return new PMCSystmWebSrvAuthResp
-                            {
-                                AuthCode = tokenresultCheck.AuthCode,
-                                AuthMessage = tokenresultCheck.AuthMessage
-                            };
-                        }
-                        break;
+                   
                 }
                 return new PMCSystmWebSrvAuthResp
                 {
                     AuthCode = auxAuthCode,
-                    AuthMessage = PMCSystmMsgC.PMMmessagecenter(59, 7)
+                    AuthMessage = PMCSystmMsgC.PMMmessagecenter(59, 7),
+                    AuthTokenOriginal = tokenresultCheck.AuthTokenOriginal
                 };
 
             }
@@ -599,5 +562,115 @@ namespace NexusHub_WebServer.Controllers
             };
 
         }
+        /*-----------------------------------------------------------------*/
+        /* CheckTokenPassword: Valida senha do token informado no header   */
+        /*-----------------------------------------------------------------*/
+
+        public PasswordValidationResp CheckTokenPassword(string tokenPassword, string tenantNameFromDb, string userName)
+        {
+            var resp = new PasswordValidationResp();
+            string methodName = "CheckTokenPassword";
+
+            // 1. Validação inicial
+            if (string.IsNullOrEmpty(tokenPassword))
+            {
+                _ = _coreDI.LogCore.PMMWpmLgCore(3,
+                                   ipaddr,
+                                   PMCSystmConstants.OriginWebServer,
+                                   className,
+                                   methodName,
+                                   PMCSystmMsgC.PMMmessagecenter(21, 646) + userName,
+                                  _coreDI.Configuration);
+                resp.ErrorMessage = PMCSystmMsgC.PMMmessagecenter(59, 6);
+                return resp;
+            }
+            // Instancia PMCSystmEnDe passando IConfiguration e a config já populada
+            PMCSystmEnDe newende = new PMCSystmEnDe(_coreDI.Configuration);
+
+            // Agora chama o método Decrypt normalmente
+            DecryptedRequestPassword = newende.Decrypt(
+                className,
+                methodName,
+                ipaddr,
+                tokenPassword
+            );
+
+            if (DecryptedRequestPassword == "#error")
+            {
+                resp.ErrorMessage = PMCSystmMsgC.PMMmessagecenter(59, 7);
+                return resp;
+            }
+            //  Validação de tamanho total da senha (32)
+            if (DecryptedRequestPassword.Length != 32)
+            {
+                _ = _coreDI.LogCore.PMMWpmLgCore(3,
+                                  ipaddr,
+                                  PMCSystmConstants.OriginWebServer,
+                                  className,
+                                  methodName,
+                                  PMCSystmMsgC.PMMmessagecenter(21, 647)
+                                  .Replace("xx", Convert.ToString(tokenPassword.Length)) + userName,
+                                 _coreDI.Configuration);
+                resp.ErrorMessage = PMCSystmMsgC.PMMmessagecenter(59, 34);
+                return resp;
+            }
+            // Validação de ll (dois primeiros caracteres numéricos)
+
+            string decryptPassword = DecryptedRequestPassword;
+
+            if (!int.TryParse(decryptPassword.Substring(0, 2), out int ll))
+            {
+               _ = _coreDI.LogCore.PMMWpmLgCore(3,
+                                 ipaddr,
+                                 PMCSystmConstants.OriginWebServer,
+                                 className,
+                                 methodName,
+                                 PMCSystmMsgC.PMMmessagecenter(21, 648)
+                                 .Replace("xx", decryptPassword.Substring(0, 2)) + userName,
+                                _coreDI.Configuration);
+                resp.ErrorMessage = PMCSystmMsgC.PMMmessagecenter(59, 35);
+                return resp;
+            }
+
+            //  Validação de tamanho do prefixo do nome do tenant  (18)
+            if (ll != 16)
+            {
+                _ = _coreDI.LogCore.PMMWpmLgCore(3,
+                                  ipaddr,
+                                  PMCSystmConstants.OriginWebServer,
+                                  className,
+                                  methodName,
+                                  PMCSystmMsgC.PMMmessagecenter(21, 649)
+                                  .Replace("xx",Convert.ToString(ll)) + userName,
+                                 _coreDI.Configuration);
+                resp.ErrorMessage = PMCSystmMsgC.PMMmessagecenter(59, 34);
+                return resp;
+            }
+
+            
+            // Extração do tenantName da senha
+            string tenantNameExtracted = decryptPassword.Substring(2, ll);
+
+            // Comparação com tenantName do BD
+            if (!string.Equals(tenantNameExtracted, tenantNameFromDb, StringComparison.OrdinalIgnoreCase))
+            {
+                _ = _coreDI.LogCore.PMMWpmLgCore(3,
+                                  ipaddr,
+                                  PMCSystmConstants.OriginWebServer,
+                                  className,
+                                  methodName,
+                                  PMCSystmMsgC.PMMmessagecenter(21, 650)
+                                  .Replace("...", tenantNameExtracted)
+                                  .Replace("+++", tenantNameFromDb) + userName,
+                                 _coreDI.Configuration);
+                resp.ErrorMessage = PMCSystmMsgC.PMMmessagecenter(59, 36);
+                return resp;
+            }
+
+            // Se chegou até aqui, está tudo ok
+            resp.Success = true;
+            return resp;
+        }
+
     }
 }

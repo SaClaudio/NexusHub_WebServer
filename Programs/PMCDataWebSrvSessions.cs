@@ -32,7 +32,12 @@
 /*   - FlushSessionToDatabase:                                                        */
 /*       Persiste métricas de sessão em tabela MySQL.                                 */
 /*                                                                                    */
+/*   - TokenExists:                                                                   */
+/*       Verifica se o token informado existe no dicionário. Se não existir,          */
+/*       significa que o login não foi realizado ou já foi encerrado.                 */
+/*                                                                                    */
 /*------------------------------------------------------------------------------------*/
+
 
 using System;
 using System.Collections.Concurrent;
@@ -46,6 +51,7 @@ namespace PriceMaker_MultTenant.Programs
         public class Session
         {
             public string UserId { get; set; }           // extraído do header do token
+            public string UserName { get; set; }          
             public string SessionIpAddr { get; set; }
             public string Tenantnm { get; set; }
             public int Subscribertyp { get; set; }
@@ -82,7 +88,8 @@ namespace PriceMaker_MultTenant.Programs
                         LastActivity = DateTime.UtcNow,
                         SessionIn = 0,
                         SessionOut = 0,
-                        UserId = userId
+                        UserId = userId,
+                        UserName = username
                     },
                     (key, old) =>
                     {
@@ -95,6 +102,7 @@ namespace PriceMaker_MultTenant.Programs
                         old.SessionIn = 0;
                         old.SessionOut = 0;
                         old.UserId = userId;
+                        old.UserName = username;
                         return old;
                     });
 
@@ -302,5 +310,20 @@ namespace PriceMaker_MultTenant.Programs
         {
             // Implementar lógica de persistência em MySQL
         }
+        /*-------------------------------------------------------------------------------------------*/
+        /* GetSession: retorna o objeto Session associado ao token informado no dicionário.          */
+        /* Retorna o objeto completo da sessão se existir, ou null caso o token não esteja registrado*/
+        /* Uso: obter diretamente os dados da sessão (UserId, Tenant, Status, etc.) para validações  */
+        /*      e controles adicionais sem precisar verificar existência separadamente.              */
+        /*-------------------------------------------------------------------------------------------*/
+        public static Session GetSession(string token)
+        {
+            if (WebSrvSessions.TryGetValue(token, out var sessionData))
+            {
+                return sessionData; // objeto Session completo
+            }
+            return null; // token não encontrado
+        }
+
     }
 }
