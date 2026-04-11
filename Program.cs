@@ -54,7 +54,7 @@
 /*           utilize o logger corretamente, evitando perda silenciosa de eventos.     */
 /*                                                                                    */
 /*------------------------------------------------------------------------------------*/
-using NexusHub_WebServer.Controllers;
+using NexusHub_WebServer.Programs;
 using PriceMaker_MultTenant.Data;
 using PriceMaker_MultTenant.Programs;
 using PriceMaker_SharedLib.Models;
@@ -217,7 +217,7 @@ builder.Services.AddControllers()
         options.SerializerSettings.ReferenceLoopHandling = Newtonsoft.Json.ReferenceLoopHandling.Ignore);
 
 builder.Services.AddScoped<PMCSystmWebSrvAuthValidator>();
-builder.Services.AddScoped<PMCSystmWebSrvProdService>();
+builder.Services.AddScoped<PMCSystmWebSrvProdDispatcher>();
 
 // 🔑 Inicialização do dicionário de sessões
 PMCDataWebSrvSessions.WebSrvSessions = new ConcurrentDictionary<string, PMCDataWebSrvSessions.Session>();

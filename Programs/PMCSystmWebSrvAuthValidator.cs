@@ -39,8 +39,7 @@
 /*         - Retornos seguem códigos mapeados em PMCSystmConstants -> WebServerRetCodes.     */
 /*-------------------------------------------------------------------------------------------*/
 
-
-namespace NexusHub_WebServer.Controllers
+namespace NexusHub_WebServer.Programs
 {
     using Microsoft.EntityFrameworkCore.Storage.ValueConversion.Internal;
     using Newtonsoft.Json.Linq;
@@ -73,6 +72,7 @@ namespace NexusHub_WebServer.Controllers
         {
             public bool Success { get; set; }
             public string ErrorMessage { get; set; } = string.Empty;
+            public string TenantFromPsw { get; set; } = string.Empty;
         }
         private string tenantName;        /* Prefixo do nome do tenant do assinante */
         private string DecryptedRequestPassword;      // Senha decriptografada do Request
@@ -101,7 +101,7 @@ namespace NexusHub_WebServer.Controllers
                 /*---------------------------------------------------------------------*/
                 var traceMsg = new PMCSystmTrcMsg
                 {
-                    Origem = PMCSystmConstants.OriginWebServer,
+                    Origem = OriginWebServer,
                     IpAddr = Environment.MachineName,     // Não usa IP e sim, nome do servidor, já que é um processo interno
                     MainObj = className,                  // Nome desta Classe
                     SecObj = methodName,                  // Nome do Metodo
@@ -111,7 +111,6 @@ namespace NexusHub_WebServer.Controllers
                     request.AuthToken + " # " +
                     request.AuthPassword + " # " +
                     request.AuthEndpoint + " # " +
-                    request.AuthProtocol + " # " +
                     request.AuthIpaddr
                 };
                 /*---------------------------------------------------------------------*/
@@ -162,19 +161,10 @@ namespace NexusHub_WebServer.Controllers
                         AuthMessage = PMCSystmMsgC.PMMmessagecenter(59, 3)
                     };
                 }
-                
-                /*--- Verifica se tem Protocol no Header ---*/
-                if (string.IsNullOrEmpty(request.AuthProtocol))
-                {
-                    return new PMCSystmWebSrvAuthResp
-                    {
-                        AuthCode = (int)WebServerRetCodes.ProtocolMissing,
-                        AuthMessage = PMCSystmMsgC.PMMmessagecenter(59, 1)
-                    };
-                }
+               
                 /*--------- Faz avaliação cruzada quanto ao uso da senha por endpoint. Só aceita se for login */
 
-                if (functionlower != PMCSystmConstants.WebsrvEndpointLogin && !string.IsNullOrEmpty(request.AuthPassword))
+                if (functionlower != WebsrvEndpointLogin && !string.IsNullOrEmpty(request.AuthPassword))
                 {
                     return new PMCSystmWebSrvAuthResp
                     {
@@ -202,7 +192,7 @@ namespace NexusHub_WebServer.Controllers
                 var userId = jwtToken.Claims.FirstOrDefault(c => c.Type == "keyid")?.Value;
                 auxAuthCode = tokenresultCheck.AuthCode;     // Pode ser OK ou TokenWillExpire, mas é o que tem para esse cenário
 
-                if (functionlower != PMCSystmConstants.WebsrvEndpointLogin)       /* Se não for função de login, valida se token tem sessão ativa no dicionário de sessões do web server */
+                if (functionlower != WebsrvEndpointLogin)       /* Se não for função de login, valida se token tem sessão ativa no dicionário de sessões do web server */
                 {
                     if (!PMCDataWebSrvSessions.TokenExists(tokenresultCheck.AuthTokenOriginal))
                     {
@@ -215,7 +205,7 @@ namespace NexusHub_WebServer.Controllers
 
                 }
 
-                if (functionlower == PMCSystmConstants.WebsrvEndpointLogin)       /* Se for função de login, valida se já foi feito login antes */
+                if (functionlower == WebsrvEndpointLogin)       /* Se for função de login, valida se já foi feito login antes */
                 {
                     if (PMCDataWebSrvSessions.TokenExists(tokenresultCheck.AuthTokenOriginal))
                     {
@@ -243,7 +233,7 @@ namespace NexusHub_WebServer.Controllers
                         var (identityuser, identityrc) = await _identityIO.PMMIOdriver(dbParm,
                             className,
                             methodName,
-                            PMCSystmConstants.OriginWebServer);
+                            OriginWebServer);
                         string userName = string.Empty;
 
                         switch (identityrc.ReturnCode)
@@ -254,7 +244,7 @@ namespace NexusHub_WebServer.Controllers
                             case "1":     /* Usuário não encontrado */
                                 _ = _coreDI.LogCore.PMMWpmLgCore(3,
                                     ipaddr,
-                                    PMCSystmConstants.OriginWebServer,
+                                    OriginWebServer,
                                     className,
                                     methodName,
                                     PMCSystmMsgC.PMMmessagecenter(21, 631) + userId,
@@ -288,7 +278,7 @@ namespace NexusHub_WebServer.Controllers
                                 AuthMessage = resp.ErrorMessage
                             };
                         }
-
+                        tenantName = resp.TenantFromPsw;     // Se senha está ok, pega tenantName extraído da senha para usar adiante
                         /*--------- Verifica se token informado no request é o mesmo que está na BD ---*/
 
                         auxAuthCode = tokenresultCheck.AuthCode;     // Pode ser OK ou TokenWillExpire, mas é o que tem para esse cenário
@@ -297,7 +287,7 @@ namespace NexusHub_WebServer.Controllers
                         {
                             return new PMCSystmWebSrvAuthResp
                             {
-                                AuthCode = (int)PMCSystmConstants.WebServerRetCodes.TokenInvalidMismatch,
+                                AuthCode = (int)WebServerRetCodes.TokenInvalidMismatch,
                                 AuthMessage = gtknresult[2]
                             };
                         }
@@ -316,7 +306,7 @@ namespace NexusHub_WebServer.Controllers
                             default:
                                 _ = _coreDI.LogCore.PMMWpmLgCore(3,
                                    ipaddr,
-                                   PMCSystmConstants.OriginWebServer,
+                                   OriginWebServer,
                                    className,
                                    methodName,
                                    PMCSystmMsgC.PMMmessagecenter(21, 633) + userName,
@@ -338,7 +328,7 @@ namespace NexusHub_WebServer.Controllers
                             case PMCSystmFlags.Pm_subscriber_acctype_suspendedtrialend:
                                 _ = _coreDI.LogCore.PMMWpmLgCore(3,
                                    ipaddr,
-                                   PMCSystmConstants.OriginWebServer,
+                                   OriginWebServer,
                                    className,
                                    methodName,
                                    PMCSystmMsgC.PMMmessagecenter(21, 634) + userName,
@@ -352,7 +342,7 @@ namespace NexusHub_WebServer.Controllers
                             case PMCSystmFlags.Pm_subscriber_acctype_suspendedpayment:
                                 _ = _coreDI.LogCore.PMMWpmLgCore(3,
                                         ipaddr,
-                                       PMCSystmConstants.OriginWebServer,
+                                       OriginWebServer,
                                        className,
                                        methodName,
                                        PMCSystmMsgC.PMMmessagecenter(21, 635) + userId,
@@ -365,7 +355,7 @@ namespace NexusHub_WebServer.Controllers
                             default:
                                 _ = _coreDI.LogCore.PMMWpmLgCore(2,
                                    ipaddr,
-                                   PMCSystmConstants.OriginWebServer,
+                                   OriginWebServer,
                                    className,
                                    methodName,
                                    PMCSystmMsgC.PMMmessagecenter(21, 634) + userName,
@@ -386,7 +376,7 @@ namespace NexusHub_WebServer.Controllers
                             default:
                                 _ = _coreDI.LogCore.PMMWpmLgCore(2,
                                    ipaddr,
-                                   PMCSystmConstants.OriginWebServer,
+                                   OriginWebServer,
                                    className,
                                    methodName,
                                    PMCSystmMsgC.PMMmessagecenter(21, 633) + userName,
@@ -407,7 +397,7 @@ namespace NexusHub_WebServer.Controllers
                             {
                                 _ = _coreDI.LogCore.PMMWpmLgCore(3,
                                    ipaddr,
-                                   PMCSystmConstants.OriginWebServer,
+                                   OriginWebServer,
                                    className,
                                    methodName,
                                    PMCSystmMsgC.PMMmessagecenter(21, 637) + userName + " / " + request.AuthIpaddr,
@@ -431,7 +421,7 @@ namespace NexusHub_WebServer.Controllers
                         {
                             _ = _coreDI.LogCore.PMMWpmLgCore(2,
                                    ipaddr,
-                                   PMCSystmConstants.OriginWebServer,
+                                   OriginWebServer,
                                    className,
                                    methodName,
                                    PMCSystmMsgC.PMMmessagecenter(21, 636).Replace("...", "AddToken"),
@@ -471,7 +461,7 @@ namespace NexusHub_WebServer.Controllers
             {
                 _ = _coreDI.LogCore.PMMWpmLgCore(1,
                         ipaddr,
-                        PMCSystmConstants.OriginWebServer,
+                        OriginWebServer,
                         className,
                         methodName,
                         PMCSystmMsgC.PMMmessagecenter(21, 627) + ex.Message,
@@ -517,7 +507,7 @@ namespace NexusHub_WebServer.Controllers
             gtknresult = pmgettoken.PMMChkToken("Webserver",
                 decryptedToken,
                 tenantName,
-                PMCSystmConstants.OriginWebServer);
+                OriginWebServer);
 
             switch (gtknresult[0])
             {
@@ -576,7 +566,7 @@ namespace NexusHub_WebServer.Controllers
             {
                 _ = _coreDI.LogCore.PMMWpmLgCore(3,
                                    ipaddr,
-                                   PMCSystmConstants.OriginWebServer,
+                                   OriginWebServer,
                                    className,
                                    methodName,
                                    PMCSystmMsgC.PMMmessagecenter(21, 646) + userName,
@@ -605,7 +595,7 @@ namespace NexusHub_WebServer.Controllers
             {
                 _ = _coreDI.LogCore.PMMWpmLgCore(3,
                                   ipaddr,
-                                  PMCSystmConstants.OriginWebServer,
+                                  OriginWebServer,
                                   className,
                                   methodName,
                                   PMCSystmMsgC.PMMmessagecenter(21, 647)
@@ -622,7 +612,7 @@ namespace NexusHub_WebServer.Controllers
             {
                _ = _coreDI.LogCore.PMMWpmLgCore(3,
                                  ipaddr,
-                                 PMCSystmConstants.OriginWebServer,
+                                 OriginWebServer,
                                  className,
                                  methodName,
                                  PMCSystmMsgC.PMMmessagecenter(21, 648)
@@ -637,7 +627,7 @@ namespace NexusHub_WebServer.Controllers
             {
                 _ = _coreDI.LogCore.PMMWpmLgCore(3,
                                   ipaddr,
-                                  PMCSystmConstants.OriginWebServer,
+                                  OriginWebServer,
                                   className,
                                   methodName,
                                   PMCSystmMsgC.PMMmessagecenter(21, 649)
@@ -656,7 +646,7 @@ namespace NexusHub_WebServer.Controllers
             {
                 _ = _coreDI.LogCore.PMMWpmLgCore(3,
                                   ipaddr,
-                                  PMCSystmConstants.OriginWebServer,
+                                  OriginWebServer,
                                   className,
                                   methodName,
                                   PMCSystmMsgC.PMMmessagecenter(21, 650)
@@ -668,6 +658,7 @@ namespace NexusHub_WebServer.Controllers
             }
 
             // Se chegou até aqui, está tudo ok
+            resp.TenantFromPsw = tenantNameExtracted;
             resp.Success = true;
             return resp;
         }

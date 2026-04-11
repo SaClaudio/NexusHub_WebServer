@@ -5,7 +5,7 @@
 /*         Responsável por autenticar credenciais, criar e encerrar sessões no dicionário    */
 /*         interno do Web Server, além de registrar logs de auditoria.                       */
 /*                                                                                           */
-/* CLASSE: PMCSystmWebServerLoginController                                                  */
+/* CLASSE: PMCSystmWebServerLgiLgoController                                                 */
 /*                                                                                           */
 /* MÉTODOS:                                                                                  */
 /*         - Login:                                                                          */
@@ -38,7 +38,7 @@ using Microsoft.AspNetCore.Identity.Data;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore.Metadata.Internal;
 using MySqlX.XDevAPI.Relational;
-using NexusHub_WebServer.Controllers;
+using NexusHub_WebServer.Programs;
 using Org.BouncyCastle.Asn1.Ocsp;
 using PriceMaker_MultTenant.Programs;
 using PriceMaker_SharedLib.Models;
@@ -53,21 +53,21 @@ using static PriceMaker_SharedLib.Models.PMCSystmConstants;
 [ApiController]
 [Route("nexushub-webserver")]
 
-public class PMCSystmWebServerLoginController : ControllerBase
+public class PMCSystmWebServerLgiLgoController : ControllerBase
 {
     private readonly IConfiguration _config;
     private readonly PMCSystmLogCenter _logCenter;
     private readonly PMCSystmTraceCenter _trcCenter;
     private readonly PMCSystmWebSrvAuthValidator _authValidator;
-    private readonly PMCSystmWebSrvProdService _prodService;
+    private readonly PMCSystmWebSrvProdDispatcher _prodService;
     private readonly IHttpContextAccessor _httpContextAccessor;
 
-    public PMCSystmWebServerLoginController(
+    public PMCSystmWebServerLgiLgoController(
         IConfiguration config,
         PMCSystmLogCenter logCenter,
         PMCSystmTraceCenter trcCenter,
         PMCSystmWebSrvAuthValidator authValidator,
-        PMCSystmWebSrvProdService prodService,
+        PMCSystmWebSrvProdDispatcher prodService,
         IHttpContextAccessor httpContextAccessor)
     {
         _config = config;
@@ -77,21 +77,25 @@ public class PMCSystmWebServerLoginController : ControllerBase
         _prodService = prodService;
         _httpContextAccessor = httpContextAccessor;
     }
-    private string className = "PMCSystmWebServer";
+    private string className = "PMCSystmWebServerLgiLgo";
     private string methodName = "Login";
 
+    /*-----------------------------------------------------------------*/
+    /* Login: Recebe requisição do cliet e faz login                   */
+    /*-----------------------------------------------------------------*/
+
     [HttpPost("login")]
-    public async Task<IActionResult> Login([FromBody] PMCSystmWebSrvRequest body)
+    public async Task<IActionResult> Login([FromBody] PMCSystmWebSrvRequest<object> body)
     {
         string ipAddr = PMCSystmGtIP.GetIpAddress(_httpContextAccessor);
         try
         {
-           
-            var requestDto = new PMCSystmWebSrvRequest
+
+            var requestDto = new PMCSystmWebSrvRequest<object>
             {
-                Password = body.Password,   // senha vem do corpo
-                Endpoint = body.Endpoint,
-                Protocol = body.Protocol
+                Password = body.Password,
+                Endpoint = body.Endpoint
+                // Protocolo não é usado aqui
             };
 
             var requestToAuth = new PMCSystmWebSrvAuthRequest
@@ -100,7 +104,6 @@ public class PMCSystmWebServerLoginController : ControllerBase
                 AuthToken = Request.Headers["Authorization"].FirstOrDefault(),
                 AuthPassword = requestDto.Password,
                 AuthEndpoint = requestDto.Endpoint,
-                AuthProtocol = requestDto.Protocol,
                 AuthIpaddr = ipAddr
             };
 
@@ -154,18 +157,23 @@ public class PMCSystmWebServerLoginController : ControllerBase
             });
         }
     }
+
+    /*-----------------------------------------------------------------*/
+    /* Logout: Recebe requisição do cliet e faz logout                 */
+    /*-----------------------------------------------------------------*/
+
     [HttpPost("logout")]
-    public async Task<IActionResult> Logout([FromBody] PMCSystmWebSrvRequest body)
+    public async Task<IActionResult> Logout([FromBody] PMCSystmWebSrvRequest<object> body)
     {
         string ipAddr = PMCSystmGtIP.GetIpAddress(_httpContextAccessor);
         try
         {
 
-            var requestDto = new PMCSystmWebSrvRequest
+            var requestDto = new PMCSystmWebSrvRequest<object>
             {
-                Password = body.Password,   // senha vem do corpo
-                Endpoint = body.Endpoint,
-                Protocol = body.Protocol
+                Password = body.Password,
+                Endpoint = body.Endpoint
+                // Protocolo não é usado aqui
             };
 
             var requestToAuth = new PMCSystmWebSrvAuthRequest
@@ -174,7 +182,6 @@ public class PMCSystmWebServerLoginController : ControllerBase
                 AuthToken = Request.Headers["Authorization"].FirstOrDefault(),
                 AuthPassword = requestDto.Password,
                 AuthEndpoint = requestDto.Endpoint,
-                AuthProtocol = requestDto.Protocol,
                 AuthIpaddr = ipAddr
             };
 
