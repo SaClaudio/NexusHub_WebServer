@@ -71,56 +71,23 @@ namespace NexusHub_WebServer.Programs
             try
             {
 
-                var parts = protocolo?.Split('|');
-
-                if (parts == null)          /* Protocolo nulo. Inválido */
-                {
-                    return new PMCSystmWebSrvProdResp
-                    {
-                        ProdRetCode = (int)PMCSystmConstants.WebServerRetCodes.ProdLayoutInvalid,
-                        ProdMessage = PMCSystmMsgC.PMMmessagecenter(59, 1)
-                    };
-                }
-
-                string acao = protocolo.Dado.Sku; /* Ação é o primeiro elemento do protocolo, que deve ser o SKU, Barcode ou chave genérica dependendo da ação */
-                string dado;
-                
-                if (parts.Length == 1) /* Se só tem acao no protocolo */
-                {
-                    dado = null;
-                }
-                else
-                {
-                    dado = parts[1];
-                }
-                if (acao != "20")                           // Se é ação direta em produtos 
-                {
-                    if (string.IsNullOrEmpty(dado))         // Se não tem dado, então é erro. Tem que ter a chave para acessar o item  
-                    {
-                        return new PMCSystmWebSrvProdResp
-                        {
-                            ProdRetCode = (int)PMCSystmConstants.WebServerRetCodes.ProdDataInvld,
-                            ProdMessage = PMCSystmMsgC.PMMmessagecenter(59, 22)
-                        };
-                    }
-                }
-                
-                switch (acao)
+                var prodMethods = new PMCSystmWebSrvProdMethods(_websrvdi);
+                switch (protocolo.Acao)
                 {
                     case PMCSystmConstants.WebsrvProdBySKU:
-                        return PMCSystmWebSrvProdMethods.GetBySKU(protocolo.dado);
+                        return await prodMethods.GetBySkuAsync(protocolo.Dado, tenantName, userName);
 
-                    case PMCSystmConstants.WebsrvProdByBarcode:
-                        return PMCSystmWebSrvProdMethods.GetByBarcode(protocolo.dado);
+                   /* case PMCSystmConstants.WebsrvProdByBarcode:
+                        return prodMethods.GetByBarcode(protocolo.Dado, tenantName, userName);
 
-                    case PMCSystmConstants.WebsrvProdAddItem:
-                        return PMCSystmWebSrvProdMethods.AddItem(protocolo.dado);
+                    case PMCSystmConstants.WebsrvProdAddIterm:
+                        return prodMethods.AddItem(protocolo.Dado, tenantName, userName);
 
                     case PMCSystmConstants.WebsrvProdDelItem:
-                        return PMCSystmWebSrvProdMethods.DeleteItem(protocolo.dado);
+                        return prodMethods.DeleteItem(protocolo.Dado, tenantName, userName);
 
                     case PMCSystmConstants.WebsrvProdUpdItem:
-                        return PMCSystmWebSrvProdMethods.UpdateItem(protocolo.dado);
+                        return prodMethods.UpdateItem(protocolo.Dado, tenantName, userName);*/
 
 
                     default:
@@ -129,7 +96,7 @@ namespace NexusHub_WebServer.Programs
                                PMCSystmConstants.OriginWebServer,
                                className,
                                methodName,
-                               PMCSystmMsgC.PMMmessagecenter(21, 651) + UserName,
+                               PMCSystmMsgC.PMMmessagecenter(21, 651) + userName,
                                _websrvdi.Configuration));
 
                         return new PMCSystmWebSrvProdResp
@@ -138,34 +105,7 @@ namespace NexusHub_WebServer.Programs
                             ProdMessage = PMCSystmMsgC.PMMmessagecenter(59, 21)
                         };
                 }
-                
-                // Assinalamento do DTO amplo (PMCSystmTenantIOResp resultObjt) para o DTO de resposta (PMCSystmWebSrvProdResp)
-                var prodResult = new PMCSystmWebSrvProdResp
-                {
-                    ProdRetCode = resultObjt.ItemRetCode,
-                    ProdMessage = resultObjt.ItemMessage,
-                    ProdAction = resultObjt.ItemAction,
-                    ProdType = null, // não há coluna explícita; ajuste se existir ItemType
-                    ProdBarcode = resultObjt.ItemBarcode,
-                    ProdSku = resultObjt.ItemSku,
-                    ProdTitle = resultObjt.ItemTitle,
-                    ProdBrand = resultObjt.ItemBrandNormalized, // ou ItemBrand se preferir o original
-                    ProdUnit = resultObjt.ItemUnit,
-                    ProdQuantity = resultObjt.ItemStockQty ?? resultObjt.ItemLastPurchaseQty,
-                    ProdMargin = resultObjt.ItemMargin,
-                    ProdTotalCost = resultObjt.ItemSalesTotal ?? resultObjt.ItemTotalSales,
-                    ProdNcmCode = resultObjt.ItemNcmCode,
-                    ProdFeature1 = resultObjt.ItemChar1,
-                    ProdFeature2 = resultObjt.ItemChar2,
-                    ProdFeature3 = resultObjt.ItemChar3,
-                    ProdFeature4 = resultObjt.ItemChar4,
-                    ProdPrice = resultObjt.ItemPriceFinal ?? resultObjt.ItemPriceBsc
-                };
 
-                return new PMCSystmWebSrvProdResp
-                {
-                    ProdRetCode = (int)PMCSystmConstants.WebServerRetCodes.OK
-                };
             }
             catch (Exception ex)
             {

@@ -48,14 +48,64 @@
 /*         - Logs de auditoria e rastreabilidade registrados via PMCSystmLogCenter           */
 /*-------------------------------------------------------------------------------------------*/
 
+using PriceMaker_MultTenant.Programs;
+using PriceMaker_MultTenant.SystemIO;
+using PriceMaker_SharedLib.Models;
+
 namespace NexusHub_WebServer.Programs
 {
     public class PMCSystmWebSrvProdMethods
     {
+        private  readonly PMCSystmCoreDI _coreDI;
+        public PMCSystmWebSrvProdMethods(PMCSystmCoreDI core)
+        {
+            _coreDI = core;
+        }
+        private string callingClass = "PMCSystmWebSrvProdMethods";
+        private string callingMethod = "";
+        /*-------------------------------------------------------------------------------*/
+        /* GetBySku: Consulta Tenant do PriceMaker de aplicação do assinante pelo SKU    */
+        /*-------------------------------------------------------------------------------*/
+        public async Task<PMCSystmWebSrvProdResp> GetBySkuAsync(PMCSystmWebSrvProdRequestData requestData,
+            string tenantName, string userName)
+        {
+            callingMethod = "GetBySku";
+            var service = new PMCSystmTenantsIO(_coreDI);
+            string dbparm = PMCSystmConstants.WebsrvProdBySKU + "‡" + tenantName;
 
-        /*-----------------------------------------------------------------*/
-        /* Login: Recebe requisição do cliet e faz login                   */
-        /*-----------------------------------------------------------------*/
+            var resp = await service.PMMIOdriver(dbparm, callingClass, callingMethod, PMCSystmConstants.OriginWebServer);
 
+            var formatResp = MapTenantToProdResp(resp);
+
+            return (formatResp);
+        }
+        /*---------------------------------------------------------------------*/
+        /*                      Monta resposta do metodo                       */
+        /*---------------------------------------------------------------------*/
+        public static PMCSystmWebSrvProdResp MapTenantToProdResp(PMCSystmTenantsIOResp tenantResp)
+        {
+            return new PMCSystmWebSrvProdResp
+            {
+                ProdRetCode = tenantResp.ItemRetCode,
+                ProdMessage = tenantResp.ItemMessage,
+                ProdAction = tenantResp.ItemAction,
+                ProdType = tenantResp.ItemAction, // ou outro campo que represente tipo
+                ProdBarcode = tenantResp.ItemBarcode,
+                ProdSku = tenantResp.ItemSku,
+                ProdTitle = tenantResp.ItemTitle,
+                ProdBrandnormalized = tenantResp.ItemBrandNormalized,
+                ProdUnit = tenantResp.ItemUnit,
+                ProdQuantitypurchased = tenantResp.ItemLastPurchaseQty,
+                ProdQuantitystock = tenantResp.ItemStockQty,
+                ProdMargin = tenantResp.ItemMargin,
+                ProdTotalCostAcq = tenantResp.ItemLastPurchaseValue,
+                ProdNcmCode = tenantResp.ItemNcmCode,
+                ProdFeature1 = tenantResp.ItemChar1,
+                ProdFeature2 = tenantResp.ItemChar2,
+                ProdFeature3 = tenantResp.ItemChar3,
+                ProdFeature4 = tenantResp.ItemChar4,
+                ProdPrice = tenantResp.ItemPriceFinal
+            };
+        }
     }
 }

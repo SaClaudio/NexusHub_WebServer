@@ -35,7 +35,6 @@ using NexusHub_WebServer.Programs;
 using Org.BouncyCastle.Asn1.Ocsp;
 using PriceMaker_MultTenant.Programs;
 using PriceMaker_SharedLib.Models;
-using PriceMaker_SharedLib.Models.PriceMaker_SharedLib.Models;
 using static PriceMaker_SharedLib.Models.PMCSystmConstants;
 
 namespace NexusHub_WebServer.Controllers
@@ -95,26 +94,40 @@ namespace NexusHub_WebServer.Controllers
                 var websrvresponse = new PMCSystmWebSrvResp();
 
                 // Confirma que o endpoint é "products"
-                if (requestDto.Endpoint != PMCSystmConstants.WebsrvEndpointProducts)
+                if (requestDto.Endpoint != PMCSystmConstants.WebsrvEndpointProduct)
                 {
                     websrvresponse.WebSrvRetCode = (int)WebServerRetCodes.Endpointinvldroute;
                     websrvresponse.WebSrvRetMessage = PMCSystmMsgC.PMMmessagecenter(59, 27)
-                        .Replace("...", PMCSystmConstants.WebsrvEndpointProducts);
+                        .Replace("...", PMCSystmConstants.WebsrvEndpointProduct);
                     return BadRequest(websrvresponse);
                 }
 
                 /*--- Verifica se tem Protocol no body e se contém ação + dado ---*/
-                if (requestDto.Protocolo == null ||
-                    string.IsNullOrEmpty(requestDto.Protocolo.Acao) ||
-                    requestDto.Protocolo.Dado == null)
+                if (requestDto.Protocolo == null)
                 {
                     return BadRequest(new PMCSystmWebSrvProdResp
                     {
                         ProdRetCode = (int)WebServerRetCodes.ProtocolMissing,
-                        ProdMessage = PMCSystmMsgC.PMMmessagecenter(59, 1)
-                    };
+                        ProdMessage = PMCSystmMsgC.PMMmessagecenter(59, 1)  
+                    });
                 }
-
+                if (string.IsNullOrEmpty(requestDto.Protocolo.Acao)) 
+                { 
+                   return BadRequest(new PMCSystmWebSrvProdResp
+                    {
+                       ProdRetCode = (int)PMCSystmConstants.WebServerRetCodes.ProdDataInvld,
+                       ProdMessage = PMCSystmMsgC.PMMmessagecenter(59, 21)
+                   });
+                }
+                if (requestDto.Protocolo.Dado == null)
+                {
+                    return BadRequest(new PMCSystmWebSrvProdResp
+                    {
+                        ProdRetCode = (int)PMCSystmConstants.WebServerRetCodes.ProdDataInvld,
+                        ProdMessage = PMCSystmMsgC.PMMmessagecenter(59, 22)
+                    });
+                }
+                
                 // Autenticação
                 var validationResponse = await _authValidator.ValidateAsync(requestToAuth);
                 websrvresponse.WebSrvRetCode = validationResponse.AuthCode;
@@ -134,11 +147,6 @@ namespace NexusHub_WebServer.Controllers
 
                 return Ok(prodResponse);
 
-                // Encaminha para o Dispatcher
-
-                var prodResponse = _prodService.Dispatch(requestDto.Protocolo);
-
-                return Ok(prodResponse);
             }
             catch (Exception ex)
             {
