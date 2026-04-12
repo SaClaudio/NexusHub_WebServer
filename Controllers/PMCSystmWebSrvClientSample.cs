@@ -58,7 +58,7 @@ namespace NexusHub_WebServer.Controllers
 
                 if (response.IsSuccessStatusCode)
                 {
-                    var resp = await response.Content.ReadFromJsonAsync<PMCSystmWebSrvResp>();
+                    var resp = await response.Content.ReadFromJsonAsync<PMCSystmWebSrvSessionResp>();
 
                     Console.WriteLine($"WebSrvRetCode: {resp.WebSrvRetCode}");
                     Console.WriteLine($"WebSrvRetMessage: {resp.WebSrvRetMessage}");

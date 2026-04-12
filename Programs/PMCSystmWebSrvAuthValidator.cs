@@ -449,6 +449,13 @@ namespace NexusHub_WebServer.Programs
                         };
                    
                 }
+                /*---------------------------------------------------------------------*/
+                /* Grava entrada inicial no Trace                                      */
+                /*---------------------------------------------------------------------*/
+
+                traceMsg.MsgTxt = PMCSystmMsgC.PMMmessagecenter(0, 54);
+                traceMsg.MsgData = "NoData";
+                _ = _coreDI.TrcCore.PMMWTrGlobal(traceMsg);
                 return new PMCSystmWebSrvAuthResp
                 {
                     AuthCode = auxAuthCode,

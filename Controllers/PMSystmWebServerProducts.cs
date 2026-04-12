@@ -14,7 +14,7 @@
 /*             → Encaminha protocolo ao PMCSystmWebSrvProdService                            */
 /*             → Encapsula resposta em PMCSystmWebSrvResp                                    */
 /*             → Registra log da operação                                                    */
-/*             → Retorna WebSrvRetCode, WebSrvRetMessage e WebSrvRetData                     */
+/*             → Retorna ProdRetCode, ProdMessage e WebSrvRetData                     */
 /*                                                                                           */
 /* RETORNO:                                                                                  */
 /*         - Objeto PMCSystmWebSrvResp contendo código de status, mensagem                   */
@@ -70,34 +70,37 @@ namespace NexusHub_WebServer.Controllers
         private string methodName = "Product";
 
         [HttpPost("products")]
-        public async Task<IActionResult> Product([FromBody] PMCSystmWebSrvRequest<PMCSystmWebSrvProdRequestData> body)
+        public async Task<IActionResult> Product([FromBody] PMCSystmWebSrvProdRequest<PMCSystmWebSrvProdRequestData> body)
         {
             string ipAddr = PMCSystmGtIP.GetIpAddress(_httpContextAccessor);
             try
             {
-                var requestDto = new PMCSystmWebSrvRequest<PMCSystmWebSrvProdRequestData>
+                var requestDto = new PMCSystmWebSrvProdRequest<PMCSystmWebSrvProdRequestData>
                 {
-                    Password = body.Password,   // aqui vem nulo, só exigido no login
                     Endpoint = body.Endpoint,
                     Protocolo = body.Protocolo
                 };
-
+                var lowerEndpoint = requestDto.Endpoint.ToLower();
                 var requestToAuth = new PMCSystmWebSrvAuthRequest
                 {
                     AuthFunction = requestDto.Endpoint,
                     AuthToken = Request.Headers["Authorization"].FirstOrDefault(),
-                    AuthPassword = requestDto.Password, // nulo, mas mantido por consistência
-                    AuthEndpoint = requestDto.Endpoint,
+                    AuthPassword = string.Empty, // nulo, mas mantido por consistência
+                    AuthEndpoint = lowerEndpoint,
                     AuthIpaddr = ipAddr
                 };
 
-                var websrvresponse = new PMCSystmWebSrvResp();
+                var websrvresponse = new PMCSystmWebSrvProdResp
+                {
+                    ProdRetCode = (int)WebServerRetCodes.OK,
+                    ProdMessage = PMCSystmMsgC.PMMmessagecenter(59, 0)
+                };
 
                 // Confirma que o endpoint é "products"
-                if (requestDto.Endpoint != PMCSystmConstants.WebsrvEndpointProduct)
+                if (lowerEndpoint != PMCSystmConstants.WebsrvEndpointProduct)
                 {
-                    websrvresponse.WebSrvRetCode = (int)WebServerRetCodes.Endpointinvldroute;
-                    websrvresponse.WebSrvRetMessage = PMCSystmMsgC.PMMmessagecenter(59, 27)
+                    websrvresponse.ProdRetCode = (int)WebServerRetCodes.Endpointinvldroute;
+                    websrvresponse.ProdMessage = PMCSystmMsgC.PMMmessagecenter(59, 27)
                         .Replace("...", PMCSystmConstants.WebsrvEndpointProduct);
                     return BadRequest(websrvresponse);
                 }
@@ -115,7 +118,7 @@ namespace NexusHub_WebServer.Controllers
                 { 
                    return BadRequest(new PMCSystmWebSrvProdResp
                     {
-                       ProdRetCode = (int)PMCSystmConstants.WebServerRetCodes.ProdDataInvld,
+                       ProdRetCode = (int)PMCSystmConstants.WebServerRetCodes.ProdActionInvld,
                        ProdMessage = PMCSystmMsgC.PMMmessagecenter(59, 21)
                    });
                 }
@@ -130,8 +133,8 @@ namespace NexusHub_WebServer.Controllers
                 
                 // Autenticação
                 var validationResponse = await _authValidator.ValidateAsync(requestToAuth);
-                websrvresponse.WebSrvRetCode = validationResponse.AuthCode;
-                websrvresponse.WebSrvRetMessage = validationResponse.AuthMessage;
+                websrvresponse.ProdRetCode = validationResponse.AuthCode;
+                websrvresponse.ProdMessage = validationResponse.AuthMessage;
 
                 if (validationResponse.AuthCode != (int)PMCSystmConstants.WebServerRetCodes.OK)
                     return BadRequest(websrvresponse);
@@ -158,10 +161,10 @@ namespace NexusHub_WebServer.Controllers
                     PMCSystmMsgC.PMMmessagecenter(21, 627) + ex.Message,
                     _config));
 
-                return StatusCode(500, new PMCSystmWebSrvResp
+                return StatusCode(500, new PMCSystmWebSrvProdResp
                 {
-                    WebSrvRetCode = (int)WebServerRetCodes.InternalError,
-                    WebSrvRetMessage = PMCSystmMsgC.PMMmessagecenter(59, 7)
+                    ProdRetCode = (int)WebServerRetCodes.InternalError,
+                    ProdMessage = PMCSystmMsgC.PMMmessagecenter(59, 7)
                 });
             }
         }

@@ -5,7 +5,7 @@
 /*         Responsável por autenticar credenciais, criar e encerrar sessões no dicionário    */
 /*         interno do Web Server, além de registrar logs de auditoria.                       */
 /*                                                                                           */
-/* CLASSE: PMCSystmWebServerLgiLgoController                                                 */
+/* CLASSE: PMCSystmWebServerSessionController                                                */
 /*                                                                                           */
 /* MÉTODOS:                                                                                  */
 /*         - Login:                                                                          */
@@ -53,7 +53,7 @@ using static PriceMaker_SharedLib.Models.PMCSystmConstants;
 [ApiController]
 [Route("nexushub-webserver")]
 
-public class PMCSystmWebServerLgiLgoController : ControllerBase
+public class PMCSystmWebServerSessionController : ControllerBase
 {
     private readonly IConfiguration _config;
     private readonly PMCSystmLogCenter _logCenter;
@@ -62,7 +62,7 @@ public class PMCSystmWebServerLgiLgoController : ControllerBase
     private readonly PMCSystmWebSrvProdDispatcher _prodService;
     private readonly IHttpContextAccessor _httpContextAccessor;
 
-    public PMCSystmWebServerLgiLgoController(
+    public PMCSystmWebServerSessionController(
         IConfiguration config,
         PMCSystmLogCenter logCenter,
         PMCSystmTraceCenter trcCenter,
@@ -77,7 +77,7 @@ public class PMCSystmWebServerLgiLgoController : ControllerBase
         _prodService = prodService;
         _httpContextAccessor = httpContextAccessor;
     }
-    private string className = "PMCSystmWebServerLgiLgo";
+    private string className = "PMCSystmWebServerAuth";
     private string methodName = "Login";
 
     /*-----------------------------------------------------------------*/
@@ -85,39 +85,39 @@ public class PMCSystmWebServerLgiLgoController : ControllerBase
     /*-----------------------------------------------------------------*/
 
     [HttpPost("login")]
-    public async Task<IActionResult> Login([FromBody] PMCSystmWebSrvRequest<object> body)
+    public async Task<IActionResult> Login([FromBody] PMCSystmWebSrvSessionRequest body)
     {
         string ipAddr = PMCSystmGtIP.GetIpAddress(_httpContextAccessor);
         try
         {
-
-            var requestDto = new PMCSystmWebSrvRequest<object>
+            var requestDto = new PMCSystmWebSrvSessionRequest
             {
                 Password = body.Password,
                 Endpoint = body.Endpoint
                 // Protocolo não é usado aqui
             };
+            
+            var lowerEndpoint = requestDto.Endpoint.ToLower();
 
-            var requestToAuth = new PMCSystmWebSrvAuthRequest
-            {
-                AuthFunction = requestDto.Endpoint,
-                AuthToken = Request.Headers["Authorization"].FirstOrDefault(),
-                AuthPassword = requestDto.Password,
-                AuthEndpoint = requestDto.Endpoint,
-                AuthIpaddr = ipAddr
-            };
-
-            var websrvresponse = new PMCSystmWebSrvResp();
-            if (requestDto.Endpoint != PMCSystmConstants.WebsrvEndpointLogin)           // Se não for "login", então tem erro
+            var websrvresponse = new PMCSystmWebSrvSessionResp();
+            if (lowerEndpoint != PMCSystmConstants.WebsrvEndpointLogin)           // Se não for "login", então tem erro
             {
                 websrvresponse.WebSrvRetCode = (int)WebServerRetCodes.Endpointinvldroute;
                 websrvresponse.WebSrvRetMessage = PMCSystmMsgC.PMMmessagecenter(59, 27)
                     .Replace("...", PMCSystmConstants.WebsrvEndpointLogin);
                 return BadRequest(websrvresponse);
             }
-                        
-            var validationResponse = await _authValidator.ValidateAsync(requestToAuth);
+            var requestToAuth = new PMCSystmWebSrvAuthRequest
+            {
+                AuthFunction = requestDto.Endpoint,
+                AuthToken = Request.Headers["Authorization"].FirstOrDefault(),
+                AuthPassword = requestDto.Password,
+                AuthEndpoint = lowerEndpoint,
+                AuthIpaddr = ipAddr
+            };
 
+            var validationResponse = await _authValidator.ValidateAsync(requestToAuth);
+            
             websrvresponse.WebSrvRetCode = validationResponse.AuthCode;
             websrvresponse.WebSrvRetMessage = validationResponse.AuthMessage;
 
@@ -147,10 +147,10 @@ public class PMCSystmWebServerLgiLgoController : ControllerBase
                 PMCSystmConstants.OriginWebServer,
                 className,
                 methodName,
-                PMCSystmMsgC.PMMmessagecenter(21, 627) + ex.Message,
+                PMCSystmMsgC.PMMmessagecenter(21, 627).Replace("...", ipAddr) + ex.Message,
                 _config));
 
-            return StatusCode(500, new PMCSystmWebSrvResp
+            return StatusCode(500, new PMCSystmWebSrvSessionResp
             {
                 WebSrvRetCode = (int)PMCSystmConstants.WebServerRetCodes.InternalError,
                 WebSrvRetMessage = PMCSystmMsgC.PMMmessagecenter(59, 7)
@@ -163,13 +163,13 @@ public class PMCSystmWebServerLgiLgoController : ControllerBase
     /*-----------------------------------------------------------------*/
 
     [HttpPost("logout")]
-    public async Task<IActionResult> Logout([FromBody] PMCSystmWebSrvRequest<object> body)
+    public async Task<IActionResult> Logout([FromBody] PMCSystmWebSrvSessionRequest body)
     {
         string ipAddr = PMCSystmGtIP.GetIpAddress(_httpContextAccessor);
         try
         {
 
-            var requestDto = new PMCSystmWebSrvRequest<object>
+            var requestDto = new PMCSystmWebSrvSessionRequest()
             {
                 Password = body.Password,
                 Endpoint = body.Endpoint
@@ -185,7 +185,7 @@ public class PMCSystmWebServerLgiLgoController : ControllerBase
                 AuthIpaddr = ipAddr
             };
 
-            var websrvresponse = new PMCSystmWebSrvResp();
+            var websrvresponse = new PMCSystmWebSrvSessionResp();
             if (requestDto.Endpoint != PMCSystmConstants.WebsrvEndpointLogout)           // Se não for "login", então tem erro
             {
                 websrvresponse.WebSrvRetCode = (int)WebServerRetCodes.Endpointinvldroute;
@@ -245,7 +245,7 @@ public class PMCSystmWebServerLgiLgoController : ControllerBase
                 PMCSystmMsgC.PMMmessagecenter(21, 627) + ex.Message,
                 _config));
 
-            return StatusCode(500, new PMCSystmWebSrvResp
+            return StatusCode(500, new PMCSystmWebSrvSessionResp
             {
                 WebSrvRetCode = (int)PMCSystmConstants.WebServerRetCodes.InternalError,
                 WebSrvRetMessage = PMCSystmMsgC.PMMmessagecenter(59, 7)
