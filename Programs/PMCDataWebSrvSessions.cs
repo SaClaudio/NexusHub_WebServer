@@ -192,7 +192,7 @@ namespace PriceMaker_MultTenant.Programs
             {
                 if (WebSrvSessions.TryGetValue(token, out Session sessiondata))
                 {
-                    return new List<string> { "0", sessiondata.Tenantnm }; // sucesso
+                    return new List<string> { "0", sessiondata.Tenantnm, sessiondata.UserName }; // sucesso
                 }
                 else
                 {

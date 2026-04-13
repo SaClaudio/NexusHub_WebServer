@@ -75,6 +75,7 @@ namespace NexusHub_WebServer.Programs
             public string TenantFromPsw { get; set; } = string.Empty;
         }
         private string tenantName;        /* Prefixo do nome do tenant do assinante */
+        private string userName;
         private string DecryptedRequestPassword;      // Senha decriptografada do Request
         private string EncryptedRequestPasswordDb;    // Senha criptografada do request armazenada no tenant
         private string DecryptedRequestPasswordDb;    // Senha descriptografada do request armazenada no tenantprivate string dbParm;
@@ -201,6 +202,30 @@ namespace NexusHub_WebServer.Programs
                             AuthCode = (int)WebServerRetCodes.LoginRequired,
                             AuthMessage = PMCSystmMsgC.PMMmessagecenter(59, 31)
                         };
+                    }
+                    else
+                    {
+                        var dictresp = PMCDataWebSrvSessions.GetTenantnm(tokenresultCheck.AuthTokenOriginal);
+                        if (dictresp[0] != "0")
+                        {
+                            _ = _coreDI.LogCore.PMMWpmLgCore(2,
+                                    ipaddr,
+                                    OriginWebServer,
+                                    className,
+                                    methodName,
+                                    PMCSystmMsgC.PMMmessagecenter(21, 652).Replace("...", functionlower) + userId,
+                                   _coreDI.Configuration);
+
+                            return new PMCSystmWebSrvAuthResp
+                            {
+                               
+                                AuthCode = (int)WebServerRetCodes.InternalError,
+                                AuthMessage = PMCSystmMsgC.PMMmessagecenter(59, 7)
+                            };
+
+                        }
+                        tenantName = dictresp[1];     // Se token existe, pega tenantName registrado para esse token no dicionário de sessões do web server para usar adiante
+                        userName = dictresp[2];
                     }
 
                 }
@@ -444,6 +469,7 @@ namespace NexusHub_WebServer.Programs
                         return new PMCSystmWebSrvAuthResp
                         {
                             AuthCode = auxAuthCode,
+                            AuthTenant = tenantName,
                             AuthMessage = PMCSystmMsgC.PMMmessagecenter(59, 7),
                             AuthOtherData = userName
                         };
@@ -459,6 +485,8 @@ namespace NexusHub_WebServer.Programs
                 return new PMCSystmWebSrvAuthResp
                 {
                     AuthCode = auxAuthCode,
+                    AuthOtherData = userName,
+                    AuthTenant = tenantName,
                     AuthMessage = PMCSystmMsgC.PMMmessagecenter(59, 7),
                     AuthTokenOriginal = tokenresultCheck.AuthTokenOriginal
                 };

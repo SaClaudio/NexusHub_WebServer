@@ -148,6 +148,32 @@ namespace NexusHub_WebServer.Controllers
                     userName
                 );
 
+                switch (prodResponse.ProdRetCode)
+                {
+                    case 0:
+                        return Ok(prodResponse);
+
+                        case 1:         // Não encontrado
+                            return BadRequest(new PMCSystmWebSrvProdResp
+                            {
+                                ProdRetCode = (int)PMCSystmConstants.WebServerRetCodes.ProdKeyNotFnd,
+                                ProdMessage = PMCSystmMsgC.PMMmessagecenter(59, 37)
+                            });
+                    case 2:         // Não encontrado
+                        _ = Task.Run(() => _logCenter.PMMWpmLgCore(2,
+                                    ipAddr,
+                                    PMCSystmConstants.OriginWebServer,
+                                    "PMCSystmWebServer",
+                                    "Product",
+                                    PMCSystmMsgC.PMMmessagecenter(21, 654) + requestDto.Protocolo.Acao + " / " + requestDto.Protocolo.Dado,
+                                    _config));
+                        return BadRequest(new PMCSystmWebSrvProdResp
+                        {                            
+                            ProdRetCode = (int)PMCSystmConstants.WebServerRetCodes.InternalError,
+                            ProdMessage = PMCSystmMsgC.PMMmessagecenter(59, 7)
+                        });
+
+                }
                 return Ok(prodResponse);
 
             }

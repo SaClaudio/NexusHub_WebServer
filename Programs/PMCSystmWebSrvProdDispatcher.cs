@@ -70,8 +70,7 @@ namespace NexusHub_WebServer.Programs
             ipaddr = PMCSystmGtIP.GetIpAddress(_websrvdi.HttpContextAccessor);
             try
             {
-
-                var prodMethods = new PMCSystmWebSrvProdMethods(_websrvdi);
+               var prodMethods = new PMCSystmWebSrvProdMethods(_websrvdi);
                 switch (protocolo.Acao)
                 {
                     case PMCSystmConstants.WebsrvProdBySKU:
@@ -96,7 +95,7 @@ namespace NexusHub_WebServer.Programs
                                PMCSystmConstants.OriginWebServer,
                                className,
                                methodName,
-                               PMCSystmMsgC.PMMmessagecenter(21, 651) + userName,
+                               PMCSystmMsgC.PMMmessagecenter(21, 651).Replace("xx", protocolo.Acao) + userName,
                                _websrvdi.Configuration));
 
                         return new PMCSystmWebSrvProdResp
@@ -114,7 +113,7 @@ namespace NexusHub_WebServer.Programs
                         PMCSystmConstants.OriginWebServer,
                         className,
                         methodName,
-                        PMCSystmMsgC.PMMmessagecenter(21, 627) + ex.Message,
+                        PMCSystmMsgC.PMMmessagecenter(21, 627).Replace("...",userName) + ex.Message,
                         _websrvdi.Configuration));
 
                 return new PMCSystmWebSrvProdResp

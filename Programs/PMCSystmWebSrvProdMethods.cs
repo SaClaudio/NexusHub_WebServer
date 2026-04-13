@@ -70,8 +70,10 @@ namespace NexusHub_WebServer.Programs
             string tenantName, string userName)
         {
             callingMethod = "GetBySku";
+            
             var service = new PMCSystmTenantsIO(_coreDI);
-            string dbparm = PMCSystmConstants.WebsrvProdBySKU + "‡" + tenantName;
+
+            string dbparm = PMCSystmConstants.WebsrvProdBySKU + "‡" + tenantName + "‡" + requestData.Sku;
 
             var resp = await service.PMMIOdriver(dbparm, callingClass, callingMethod, PMCSystmConstants.OriginWebServer);
 
