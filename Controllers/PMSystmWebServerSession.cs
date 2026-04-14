@@ -59,7 +59,7 @@ public class PMCSystmWebServerSessionController : ControllerBase
     private readonly PMCSystmLogCenter _logCenter;
     private readonly PMCSystmTraceCenter _trcCenter;
     private readonly PMCSystmWebSrvAuthValidator _authValidator;
-    private readonly PMCSystmWebSrvProdDispatcher _prodService;
+    private readonly PMCSystmWebSrvProdActions _prodActions;
     private readonly IHttpContextAccessor _httpContextAccessor;
 
     public PMCSystmWebServerSessionController(
@@ -67,14 +67,14 @@ public class PMCSystmWebServerSessionController : ControllerBase
         PMCSystmLogCenter logCenter,
         PMCSystmTraceCenter trcCenter,
         PMCSystmWebSrvAuthValidator authValidator,
-        PMCSystmWebSrvProdDispatcher prodService,
+        PMCSystmWebSrvProdActions prodActions,
         IHttpContextAccessor httpContextAccessor)
     {
         _config = config;
         _logCenter = logCenter;
         _trcCenter = trcCenter;
         _authValidator = authValidator;
-        _prodService = prodService;
+        _prodActions = prodActions;
         _httpContextAccessor = httpContextAccessor;
     }
     private string className = "PMCSystmWebServerAuth";

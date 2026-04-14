@@ -217,7 +217,7 @@ builder.Services.AddControllers()
         options.SerializerSettings.ReferenceLoopHandling = Newtonsoft.Json.ReferenceLoopHandling.Ignore);
 
 builder.Services.AddScoped<PMCSystmWebSrvAuthValidator>();
-builder.Services.AddScoped<PMCSystmWebSrvProdDispatcher>();
+builder.Services.AddScoped<PMCSystmWebSrvProdActions>();
 
 // 🔑 Inicialização do dicionário de sessões
 PMCDataWebSrvSessions.WebSrvSessions = new ConcurrentDictionary<string, PMCDataWebSrvSessions.Session>();

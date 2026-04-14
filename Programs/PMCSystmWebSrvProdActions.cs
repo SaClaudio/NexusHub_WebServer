@@ -54,10 +54,10 @@ using PriceMaker_SharedLib.Models;
 
 namespace NexusHub_WebServer.Programs
 {
-    public class PMCSystmWebSrvProdMethods
+    public class PMCSystmWebSrvProdActions
     {
         private  readonly PMCSystmCoreDI _coreDI;
-        public PMCSystmWebSrvProdMethods(PMCSystmCoreDI core)
+        public PMCSystmWebSrvProdActions(PMCSystmCoreDI core)
         {
             _coreDI = core;
         }
@@ -66,14 +66,15 @@ namespace NexusHub_WebServer.Programs
         /*-------------------------------------------------------------------------------*/
         /* GetBySku: Consulta Tenant do PriceMaker de aplicação do assinante pelo SKU    */
         /*-------------------------------------------------------------------------------*/
-        public async Task<PMCSystmWebSrvProdResp> GetBySkuAsync(PMCSystmWebSrvProdRequestData requestData,
-            string tenantName, string userName)
+        public async Task<PMCSystmWebSrvProdResp> ExecProdActions(
+                PMCSystmWebSrvProdRequest  actions,
+                string tenantName,
+                string userName)
         {
-            callingMethod = "GetBySku";
+            callingMethod = "ExecProdActions";
             
             var service = new PMCSystmTenantsIO(_coreDI);
-
-            string dbparm = PMCSystmConstants.WebsrvProdBySKU + "‡" + tenantName + "‡" + requestData.Sku;
+            string dbparm = actions.Acao + "‡" + tenantName + "‡" + actions.ProdKey;
 
             var resp = await service.PMMIOdriver(dbparm, callingClass, callingMethod, PMCSystmConstants.OriginWebServer);
 
@@ -100,7 +101,7 @@ namespace NexusHub_WebServer.Programs
             {
                 ProdRetCode = tenantResp.ItemRetCode,
                 ProdMessage = tenantResp.ItemMessage,
-                ProdAction = "GetBySku",
+                ProdAction = tenantResp.ItemAction,
                 ProdType = PMCSystmConstants.Prodtype[Convert.ToInt32(tenantResp.ItemTypeProd)].Text,
                 ProdBarcode = tenantResp.ItemBarcode,
                 ProdSku = tenantResp.ItemSku,

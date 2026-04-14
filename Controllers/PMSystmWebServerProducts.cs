@@ -48,7 +48,7 @@ namespace NexusHub_WebServer.Controllers
         private readonly PMCSystmLogCenter _logCenter;
         private readonly PMCSystmTraceCenter _trcCenter;
         private readonly PMCSystmWebSrvAuthValidator _authValidator;
-        private readonly PMCSystmWebSrvProdDispatcher _prodService;
+        private readonly PMCSystmWebSrvProdActions _prodActions;
         private readonly IHttpContextAccessor _httpContextAccessor;
 
         public PMCSystmWebServerProductsController(
@@ -56,34 +56,30 @@ namespace NexusHub_WebServer.Controllers
             PMCSystmLogCenter logCenter,
             PMCSystmTraceCenter trcCenter,
             PMCSystmWebSrvAuthValidator authValidator,
-            PMCSystmWebSrvProdDispatcher prodService,
+            PMCSystmWebSrvProdActions prodActions,
             IHttpContextAccessor httpContextAccessor)
         {
             _config = config;
             _logCenter = logCenter;
             _trcCenter = trcCenter;
             _authValidator = authValidator;
-            _prodService = prodService;
+            _prodActions = prodActions;
             _httpContextAccessor = httpContextAccessor;
         }
         private string className = "PMCSystmWebServerProducts";
         private string methodName = "Product";
 
         [HttpPost("products")]
-        public async Task<IActionResult> Product([FromBody] PMCSystmWebSrvProdRequest<PMCSystmWebSrvProdRequestData> body)
+        public async Task<IActionResult> Product([FromBody] PMCSystmWebSrvProdRequest body)
         {
             string ipAddr = PMCSystmGtIP.GetIpAddress(_httpContextAccessor);
             try
             {
-                var requestDto = new PMCSystmWebSrvProdRequest<PMCSystmWebSrvProdRequestData>
-                {
-                    Endpoint = body.Endpoint,
-                    Protocolo = body.Protocolo
-                };
-                var lowerEndpoint = requestDto.Endpoint.ToLower();
+                
+                var lowerEndpoint = body.Endpoint.ToLower();
                 var requestToAuth = new PMCSystmWebSrvAuthRequest
                 {
-                    AuthFunction = requestDto.Endpoint,
+                    AuthFunction = body.Endpoint,
                     AuthToken = Request.Headers["Authorization"].FirstOrDefault(),
                     AuthPassword = string.Empty, // nulo, mas mantido por consistência
                     AuthEndpoint = lowerEndpoint,
@@ -105,31 +101,43 @@ namespace NexusHub_WebServer.Controllers
                     return BadRequest(websrvresponse);
                 }
 
-                /*--- Verifica se tem Protocol no body e se contém ação + dado ---*/
-                if (requestDto.Protocolo == null)
+                /*--- Faz critica cruzada da ação x dado na requisição ---*/
+                if (string.IsNullOrEmpty(body.Acao))
                 {
                     return BadRequest(new PMCSystmWebSrvProdResp
                     {
-                        ProdRetCode = (int)WebServerRetCodes.ProtocolMissing,
-                        ProdMessage = PMCSystmMsgC.PMMmessagecenter(59, 1)  
+                        ProdRetCode = (int)PMCSystmConstants.WebServerRetCodes.ProdActionInvld,
+                        ProdMessage = PMCSystmMsgC.PMMmessagecenter(59, 21)
                     });
                 }
-                if (string.IsNullOrEmpty(requestDto.Protocolo.Acao)) 
-                { 
-                   return BadRequest(new PMCSystmWebSrvProdResp
-                    {
-                       ProdRetCode = (int)PMCSystmConstants.WebServerRetCodes.ProdActionInvld,
-                       ProdMessage = PMCSystmMsgC.PMMmessagecenter(59, 21)
-                   });
-                }
-                if (requestDto.Protocolo.Dado == null)
+                               
+
+                switch (body.Acao.ToLower())
                 {
-                    return BadRequest(new PMCSystmWebSrvProdResp
-                    {
-                        ProdRetCode = (int)PMCSystmConstants.WebServerRetCodes.ProdDataInvld,
-                        ProdMessage = PMCSystmMsgC.PMMmessagecenter(59, 22)
-                    });
+                    case PMCSystmConstants.WebsrvProdBySKU:
+                    case PMCSystmConstants.WebsrvProdByBarcode:
+                    case PMCSystmConstants.WebsrvProdDelItem:
+                    case PMCSystmConstants.WebsrvProdUpdItem:
+                        if (string.IsNullOrEmpty(body.ProdKey))         // Se chave não informada
+                        {
+                            return BadRequest(new PMCSystmWebSrvProdResp
+                            {
+                                ProdRetCode = (int)PMCSystmConstants.WebServerRetCodes.ProdDataInvld,
+                                ProdMessage = PMCSystmMsgC.PMMmessagecenter(59, 22).Replace("xxx", body.Acao)
+                            });
+                        }
+
+                        break;
+                    case PMCSystmConstants.WebsrvProdAddItem:
+                        break;
+                    default:
+                        return BadRequest(new PMCSystmWebSrvProdResp
+                        {
+                            ProdRetCode = (int)PMCSystmConstants.WebServerRetCodes.ProdActionInvld,
+                            ProdMessage = PMCSystmMsgC.PMMmessagecenter(59, 21)
+                        });
                 }
+                               
                 
                 // Autenticação
                 var validationResponse = await _authValidator.ValidateAsync(requestToAuth);
@@ -142,8 +150,8 @@ namespace NexusHub_WebServer.Controllers
                 var tenantName = validationResponse.AuthTenant;
                 var userName = validationResponse.AuthOtherData;
 
-                var prodResponse = await _prodService.DispatchAsync(
-                    requestDto.Protocolo,
+                var prodResponse = await _prodActions.ExecProdActions(
+                    body,
                     tenantName,
                     userName
                 );
@@ -160,13 +168,13 @@ namespace NexusHub_WebServer.Controllers
                             ProdMessage = PMCSystmMsgC.PMMmessagecenter(59, 37)
                         });
                     
-                    case 2:         // NEncoontrado mas existem mais de uma linha na bd com o mesmo Id. Erro grave
+                    case 2:         // Encoontrado mas existem mais de uma linha na bd com o mesmo Id. Erro grave
                         _ = Task.Run(() => _logCenter.PMMWpmLgCore(2,
                                     ipAddr,
                                     PMCSystmConstants.OriginWebServer,
                                     "PMCSystmWebServer",
                                     "Product",
-                                    PMCSystmMsgC.PMMmessagecenter(21, 654) + requestDto.Protocolo.Acao + " / " + requestDto.Protocolo.Dado,
+                                    PMCSystmMsgC.PMMmessagecenter(21, 654) + body.Acao + " / " + body.ProdKey,
                                     _config));
                         return BadRequest(new PMCSystmWebSrvProdResp
                         {                            
