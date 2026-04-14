@@ -77,8 +77,18 @@ namespace NexusHub_WebServer.Programs
 
             var resp = await service.PMMIOdriver(dbparm, callingClass, callingMethod, PMCSystmConstants.OriginWebServer);
 
-            var formatResp = MapTenantToProdResp(resp);
-
+            var formatResp = new PMCSystmWebSrvProdResp(); ;
+            
+            if (resp.ItemRetCode == 0)
+            {
+                formatResp = MapTenantToProdResp(resp);
+            }
+            else
+            {
+                formatResp.ProdRetCode = resp.ItemRetCode;
+                formatResp.ProdMessage = resp.ItemMessage;
+            }
+                   
             return (formatResp);
         }
         /*---------------------------------------------------------------------*/
@@ -90,8 +100,8 @@ namespace NexusHub_WebServer.Programs
             {
                 ProdRetCode = tenantResp.ItemRetCode,
                 ProdMessage = tenantResp.ItemMessage,
-                ProdAction = tenantResp.ItemAction,
-                ProdType = tenantResp.ItemAction, // ou outro campo que represente tipo
+                ProdAction = "GetBySku",
+                ProdType = PMCSystmConstants.Prodtype[Convert.ToInt32(tenantResp.ItemTypeProd)].Text,
                 ProdBarcode = tenantResp.ItemBarcode,
                 ProdSku = tenantResp.ItemSku,
                 ProdTitle = tenantResp.ItemTitle,

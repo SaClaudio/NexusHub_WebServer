@@ -14,7 +14,7 @@
 /*             → Encaminha protocolo ao PMCSystmWebSrvProdService                            */
 /*             → Encapsula resposta em PMCSystmWebSrvResp                                    */
 /*             → Registra log da operação                                                    */
-/*             → Retorna ProdRetCode, ProdMessage e WebSrvRetData                     */
+/*             → Retorna ProdRetCode, ProdMessage e WebSrvRetData                            */
 /*                                                                                           */
 /* RETORNO:                                                                                  */
 /*         - Objeto PMCSystmWebSrvResp contendo código de status, mensagem                   */
@@ -147,19 +147,20 @@ namespace NexusHub_WebServer.Controllers
                     tenantName,
                     userName
                 );
-
+                
                 switch (prodResponse.ProdRetCode)
                 {
                     case 0:
                         return Ok(prodResponse);
 
-                        case 1:         // Não encontrado
-                            return BadRequest(new PMCSystmWebSrvProdResp
-                            {
-                                ProdRetCode = (int)PMCSystmConstants.WebServerRetCodes.ProdKeyNotFnd,
-                                ProdMessage = PMCSystmMsgC.PMMmessagecenter(59, 37)
-                            });
-                    case 2:         // Não encontrado
+                    case 1:         // Não encontrado
+                        return BadRequest(new PMCSystmWebSrvProdResp
+                        {
+                            ProdRetCode = (int)PMCSystmConstants.WebServerRetCodes.ProdKeyNotFnd,
+                            ProdMessage = PMCSystmMsgC.PMMmessagecenter(59, 37)
+                        });
+                    
+                    case 2:         // NEncoontrado mas existem mais de uma linha na bd com o mesmo Id. Erro grave
                         _ = Task.Run(() => _logCenter.PMMWpmLgCore(2,
                                     ipAddr,
                                     PMCSystmConstants.OriginWebServer,
@@ -172,7 +173,13 @@ namespace NexusHub_WebServer.Controllers
                             ProdRetCode = (int)PMCSystmConstants.WebServerRetCodes.InternalError,
                             ProdMessage = PMCSystmMsgC.PMMmessagecenter(59, 7)
                         });
-
+                    
+                    case 9:
+                        return BadRequest(new PMCSystmWebSrvProdResp
+                        {
+                            ProdRetCode = (int)PMCSystmConstants.WebServerRetCodes.InternalError,
+                            ProdMessage = PMCSystmMsgC.PMMmessagecenter(59, 7)
+                        });
                 }
                 return Ok(prodResponse);
 
@@ -184,7 +191,7 @@ namespace NexusHub_WebServer.Controllers
                     PMCSystmConstants.OriginWebServer,
                     "PMCSystmWebServer",
                     "Product",
-                    PMCSystmMsgC.PMMmessagecenter(21, 627) + ex.Message,
+                    PMCSystmMsgC.PMMmessagecenter(21, 627).Replace("...",ipAddr) + ex.Message,
                     _config));
 
                 return StatusCode(500, new PMCSystmWebSrvProdResp
