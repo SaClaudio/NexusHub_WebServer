@@ -76,13 +76,11 @@ namespace NexusHub_WebServer.Controllers
             try
             {
                 
-                var lowerEndpoint = body.Endpoint.ToLower();
                 var requestToAuth = new PMCSystmWebSrvAuthRequest
                 {
-                    AuthFunction = body.Endpoint,
+                    AuthFunction = "products",
                     AuthToken = Request.Headers["Authorization"].FirstOrDefault(),
                     AuthPassword = string.Empty, // nulo, mas mantido por consistência
-                    AuthEndpoint = lowerEndpoint,
                     AuthIpaddr = ipAddr
                 };
 
@@ -91,15 +89,6 @@ namespace NexusHub_WebServer.Controllers
                     ProdRetCode = (int)WebServerRetCodes.OK,
                     ProdMessage = PMCSystmMsgC.PMMmessagecenter(59, 0)
                 };
-
-                // Confirma que o endpoint é "products"
-                if (lowerEndpoint != PMCSystmConstants.WebsrvEndpointProduct)
-                {
-                    websrvresponse.ProdRetCode = (int)WebServerRetCodes.Endpointinvldroute;
-                    websrvresponse.ProdMessage = PMCSystmMsgC.PMMmessagecenter(59, 27)
-                        .Replace("...", PMCSystmConstants.WebsrvEndpointProduct);
-                    return BadRequest(websrvresponse);
-                }
 
                 /*--- Faz critica cruzada da ação x dado na requisição ---*/
                 if (string.IsNullOrEmpty(body.Acao))
@@ -110,14 +99,14 @@ namespace NexusHub_WebServer.Controllers
                         ProdMessage = PMCSystmMsgC.PMMmessagecenter(59, 21)
                     });
                 }
-                               
-
+                             
                 switch (body.Acao.ToLower())
                 {
                     case PMCSystmConstants.WebsrvProdBySKU:
                     case PMCSystmConstants.WebsrvProdByBarcode:
                     case PMCSystmConstants.WebsrvProdDelItem:
                     case PMCSystmConstants.WebsrvProdUpdItem:
+
                         if (string.IsNullOrEmpty(body.ProdKey))         // Se chave não informada
                         {
                             return BadRequest(new PMCSystmWebSrvProdResp
@@ -209,7 +198,6 @@ namespace NexusHub_WebServer.Controllers
                 });
             }
         }
-
 
     }
 }

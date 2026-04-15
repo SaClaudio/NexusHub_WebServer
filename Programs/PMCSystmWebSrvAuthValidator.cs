@@ -111,7 +111,6 @@ namespace NexusHub_WebServer.Programs
                     MsgData = request.AuthFunction + " # " +
                     request.AuthToken + " # " +
                     request.AuthPassword + " # " +
-                    request.AuthEndpoint + " # " +
                     request.AuthIpaddr
                 };
                 /*---------------------------------------------------------------------*/
@@ -129,8 +128,7 @@ namespace NexusHub_WebServer.Programs
                         AuthMessage = PMCSystmMsgC.PMMmessagecenter(59, 20)
                     };
                 }
-                string functionlower = request.AuthFunction.ToLower();
-
+                
                 /*--- Verifica se tem Token no Header ---*/
                 if (string.IsNullOrEmpty(request.AuthToken))
                 {
@@ -152,20 +150,10 @@ namespace NexusHub_WebServer.Programs
 
                 // Se chegou até aqui, remove o prefixo "Bearer " e normaliza
                 request.AuthToken = request.AuthToken.Substring("Bearer ".Length).Trim();
-                
-                /*--- Verifica se tem Endpoint no Header ---*/
-                if (string.IsNullOrEmpty(request.AuthEndpoint))
-                {
-                    return new PMCSystmWebSrvAuthResp
-                    {
-                        AuthCode = (int)WebServerRetCodes.EndpointMissing,
-                        AuthMessage = PMCSystmMsgC.PMMmessagecenter(59, 3)
-                    };
-                }
-               
+                                
                 /*--------- Faz avaliação cruzada quanto ao uso da senha por endpoint. Só aceita se for login */
 
-                if (functionlower != WebsrvEndpointLogin && !string.IsNullOrEmpty(request.AuthPassword))
+                if (request.AuthFunction != WebsrvEndpointLogin && !string.IsNullOrEmpty(request.AuthPassword))
                 {
                     return new PMCSystmWebSrvAuthResp
                     {
@@ -193,7 +181,7 @@ namespace NexusHub_WebServer.Programs
                 var userId = jwtToken.Claims.FirstOrDefault(c => c.Type == "keyid")?.Value;
                 auxAuthCode = tokenresultCheck.AuthCode;     // Pode ser OK ou TokenWillExpire, mas é o que tem para esse cenário
 
-                if (functionlower != WebsrvEndpointLogin)       /* Se não for função de login, valida se token tem sessão ativa no dicionário de sessões do web server */
+                if (request.AuthFunction != WebsrvEndpointLogin)       /* Se não for função de login, valida se token tem sessão ativa no dicionário de sessões do web server */
                 {
                     if (!PMCDataWebSrvSessions.TokenExists(tokenresultCheck.AuthTokenOriginal))
                     {
@@ -213,7 +201,7 @@ namespace NexusHub_WebServer.Programs
                                     OriginWebServer,
                                     className,
                                     methodName,
-                                    PMCSystmMsgC.PMMmessagecenter(21, 652).Replace("...", functionlower) + userId,
+                                    PMCSystmMsgC.PMMmessagecenter(21, 652).Replace("...", request.AuthFunction) + userId,
                                    _coreDI.Configuration);
 
                             return new PMCSystmWebSrvAuthResp
@@ -230,7 +218,7 @@ namespace NexusHub_WebServer.Programs
 
                 }
 
-                if (functionlower == WebsrvEndpointLogin)       /* Se for função de login, valida se já foi feito login antes */
+                if (request.AuthFunction == WebsrvEndpointLogin)       /* Se for função de login, valida se já foi feito login antes */
                 {
                     if (PMCDataWebSrvSessions.TokenExists(tokenresultCheck.AuthTokenOriginal))
                     {
@@ -244,7 +232,7 @@ namespace NexusHub_WebServer.Programs
                 }
                 /*----------- Encaminha atendimento da função passada em Function -------------*/
 
-                switch (functionlower)
+                switch (request.AuthFunction)
                 {
                     case "login":               // Função "Login"
 

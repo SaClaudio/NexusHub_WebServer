@@ -93,31 +93,18 @@ public class PMCSystmWebServerSessionController : ControllerBase
             var requestDto = new PMCSystmWebSrvSessionRequest
             {
                 Password = body.Password,
-                Endpoint = body.Endpoint
-                // Protocolo não é usado aqui
             };
             
-            var lowerEndpoint = requestDto.Endpoint.ToLower();
-
-            var websrvresponse = new PMCSystmWebSrvSessionResp();
-            if (lowerEndpoint != PMCSystmConstants.WebsrvEndpointLogin)           // Se não for "login", então tem erro
-            {
-                websrvresponse.WebSrvRetCode = (int)WebServerRetCodes.Endpointinvldroute;
-                websrvresponse.WebSrvRetMessage = PMCSystmMsgC.PMMmessagecenter(59, 27)
-                    .Replace("...", PMCSystmConstants.WebsrvEndpointLogin);
-                return BadRequest(websrvresponse);
-            }
             var requestToAuth = new PMCSystmWebSrvAuthRequest
             {
-                AuthFunction = requestDto.Endpoint,
+                AuthFunction = "login",
                 AuthToken = Request.Headers["Authorization"].FirstOrDefault(),
                 AuthPassword = requestDto.Password,
-                AuthEndpoint = lowerEndpoint,
                 AuthIpaddr = ipAddr
             };
 
             var validationResponse = await _authValidator.ValidateAsync(requestToAuth);
-            
+            var websrvresponse = new PMCSystmWebSrvSessionResp();
             websrvresponse.WebSrvRetCode = validationResponse.AuthCode;
             websrvresponse.WebSrvRetMessage = validationResponse.AuthMessage;
 
@@ -171,29 +158,19 @@ public class PMCSystmWebServerSessionController : ControllerBase
 
             var requestDto = new PMCSystmWebSrvSessionRequest()
             {
-                Password = body.Password,
-                Endpoint = body.Endpoint
-                // Protocolo não é usado aqui
+                Password = body.Password                
             };
 
             var requestToAuth = new PMCSystmWebSrvAuthRequest
             {
-                AuthFunction = requestDto.Endpoint,
+                AuthFunction = "logout",
                 AuthToken = Request.Headers["Authorization"].FirstOrDefault(),
                 AuthPassword = requestDto.Password,
-                AuthEndpoint = requestDto.Endpoint,
                 AuthIpaddr = ipAddr
             };
 
             var websrvresponse = new PMCSystmWebSrvSessionResp();
-            if (requestDto.Endpoint != PMCSystmConstants.WebsrvEndpointLogout)           // Se não for "login", então tem erro
-            {
-                websrvresponse.WebSrvRetCode = (int)WebServerRetCodes.Endpointinvldroute;
-                websrvresponse.WebSrvRetMessage = PMCSystmMsgC.PMMmessagecenter(59, 27)
-                    .Replace("...", PMCSystmConstants.WebsrvEndpointLogout);
-                return BadRequest(websrvresponse);
-            }
-
+            
             var validationResponse = await _authValidator.ValidateAsync(requestToAuth);
 
             websrvresponse.WebSrvRetCode = validationResponse.AuthCode;
