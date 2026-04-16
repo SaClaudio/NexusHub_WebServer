@@ -42,6 +42,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Drawing;
 using System.Linq;
 
 namespace PriceMaker_MultTenant.Programs
@@ -50,15 +51,17 @@ namespace PriceMaker_MultTenant.Programs
     {
         public class Session
         {
-            public string UserId { get; set; }           // extraído do header do token
+            public string? ReturnCode { get; set; }             // código de retorno padrão para respostas (ex: "0" para sucesso, "1" para erro, etc.)
+            public string UserId { get; set; }                  // extraído do header do token
             public string UserName { get; set; }          
             public string SessionIpAddr { get; set; }
             public string Tenantnm { get; set; }
             public int Subscribertyp { get; set; }
-            public string SubscriberStatus { get; set; } // ativo, suspenso, cancelado
-            public DateTime LastActivity { get; set; }   // controle de expiração
-            public int SessionIn { get; set; }           // total de requests recebidos
-            public int SessionOut { get; set; }          // total de mensagens retornadas
+            public string SubscriberStatus { get; set; }        // ativo, suspenso, cancelado
+            public string SubscriberConfigValues { get; set; }  // string JSON com configurações específicas do assinante
+            public DateTime LastActivity { get; set; }          // controle de expiração
+            public int SessionIn { get; set; }                  // total de requests recebidos
+            public int SessionOut { get; set; }                 // total de mensagens retornadas
         }
 
         public static ConcurrentDictionary<string, Session> WebSrvSessions
@@ -74,7 +77,8 @@ namespace PriceMaker_MultTenant.Programs
                     string tenantnm,
                     string username,
                     int subtype,
-                    string userId) // novo parâmetro
+                    string userId,
+                    string subconfigdata) 
         {
             try
             {
@@ -89,7 +93,8 @@ namespace PriceMaker_MultTenant.Programs
                         SessionIn = 0,
                         SessionOut = 0,
                         UserId = userId,
-                        UserName = username
+                        UserName = username,
+                        SubscriberConfigValues = subconfigdata
                     },
                     (key, old) =>
                     {
@@ -103,6 +108,7 @@ namespace PriceMaker_MultTenant.Programs
                         old.SessionOut = 0;
                         old.UserId = userId;
                         old.UserName = username;
+                        old.SubscriberConfigValues = subconfigdata;
                         return old;
                     });
 
@@ -146,19 +152,7 @@ namespace PriceMaker_MultTenant.Programs
             }
             return false;
         }
-        /*-------------------------------------------------------------------------------------------*/
-        /* GetIpByToken: retorna o endereço IP associado ao token informado.                         */
-        /* Retorna o IP se o token existir, ou null se não encontrado.                               */
-        /* Uso: obter o IP atual da sessão para auditoria ou validação adicional.                    */
-        /*-------------------------------------------------------------------------------------------*/
-        public static string GetIpByToken(string token)
-        {
-            if (WebSrvSessions.TryGetValue(token, out Session session))
-            {
-                return session.SessionIpAddr;
-            }
-            return null;
-        }
+        
         /*-------------------------------------------------------------------------------------------*/
         /* DelToken: remove entrada correspondente ao token no dicionário.                           */
         /* Antes de remover, descarrega métricas acumuladas em MySQL.                                */
@@ -182,29 +176,7 @@ namespace PriceMaker_MultTenant.Programs
                 return new List<string> { "9", ex.Message }; // falha/crash com mensagem
             }
         }
-        /*-------------------------------------------------------------------------------------------*/
-        /* GetTenantnm: retorna o nome do tenant associado ao token.                                 */
-        /* Se não encontrado, retorna null.                                                          */
-        /*-------------------------------------------------------------------------------------------*/
-        public static List<string> GetTenantnm(string token)
-        {
-            try
-            {
-                if (WebSrvSessions.TryGetValue(token, out Session sessiondata))
-                {
-                    return new List<string> { "0", sessiondata.Tenantnm, sessiondata.UserName }; // sucesso
-                }
-                else
-                {
-                    return new List<string> { "1", "Notfound" }; // não encontrado
-                }
-            }
-            catch (Exception ex)
-            {
-                return new List<string> { "9", ex.Message }; // falha/crash com mensagem
-            }
-        }
-
+        
         /*-------------------------------------------------------------------------------------------*/
         /* IsSessionActive: verifica se a sessão está ativa com base em LastActivity.                */
         /* Retorna true se a diferença entre agora e LastActivity for menor que limiteMinutos.       */
@@ -320,10 +292,17 @@ namespace PriceMaker_MultTenant.Programs
         {
             if (WebSrvSessions.TryGetValue(token, out var sessionData))
             {
-                return sessionData; // objeto Session completo
+                sessionData.ReturnCode = "0"; // encontrado
+                return sessionData;
             }
-            return null; // token não encontrado
+
+            // não encontrado: cria um objeto Session apenas com ReturnCode = "1"
+            return new Session
+            {
+                ReturnCode = "1"
+            };
         }
+
 
     }
 }

@@ -31,10 +31,12 @@
 
 using Microsoft.AspNetCore.Mvc;
 using MySqlX.XDevAPI;
+using Newtonsoft.Json;
 using NexusHub_WebServer.Programs;
 using Org.BouncyCastle.Asn1.Ocsp;
 using PriceMaker_MultTenant.Programs;
 using PriceMaker_SharedLib.Models;
+using System.Text.Json;
 using static PriceMaker_SharedLib.Models.PMCSystmConstants;
 
 namespace NexusHub_WebServer.Controllers
@@ -70,7 +72,7 @@ namespace NexusHub_WebServer.Controllers
         private string methodName = "Product";
 
         [HttpPost("products")]
-        public async Task<IActionResult> Product([FromBody] PMCSystmWebSrvProdRequest body)
+        public async Task<IActionResult> Product([FromBody] PMCSystmSubsDataRequest body)
         {
             string ipAddr = PMCSystmGtIP.GetIpAddress(_httpContextAccessor);
             try
@@ -138,9 +140,33 @@ namespace NexusHub_WebServer.Controllers
                 // Autenticador já devolve tenantName e userName
                 var tenantName = validationResponse.AuthTenant;
                 var userName = validationResponse.AuthOtherData;
+                var token = validationResponse.AuthTokenOriginal;
+                // Instâncias da configuração do tenant do assinante
+                var configRequest = new PMCSystmSubsConfigRequest { /* ... popula campos ... */ };
+                var dictresp = PMCDataWebSrvSessions.GetSession(token);
+                if (dictresp.ReturnCode != "0")
+                {
+                    _ = _logCenter.PMMWpmLgCore(2,
+                            ipAddr,
+                            OriginWebServer,
+                            className,
+                            methodName,
+                            PMCSystmMsgC.PMMmessagecenter(21, 652).Replace("...", body.Acao) + userName,
+                           _config);
 
+                    return BadRequest(new PMCSystmWebSrvProdResp
+                    {
+                        ProdRetCode = (int)WebServerRetCodes.InternalError,
+                        ProdMessage = PMCSystmMsgC.PMMmessagecenter(59, 7)
+                    });
+
+                }
+                configRequest = JsonConvert.DeserializeObject<PMCSystmSubsConfigRequest>(dictresp.SubscriberConfigValues); // Configurações do assinante, como conexões de banco, chaves de API, etc.
                 var prodResponse = await _prodActions.ExecProdActions(
+                    ipAddr,
+                    token,
                     body,
+                    configRequest,
                     tenantName,
                     userName
                 );
@@ -157,7 +183,7 @@ namespace NexusHub_WebServer.Controllers
                             ProdMessage = PMCSystmMsgC.PMMmessagecenter(59, 37)
                         });
                     
-                    case 2:         // Encoontrado mas existem mais de uma linha na bd com o mesmo Id. Erro grave
+                    case 2:         // Encontrado mas existem mais de uma linha na bd com o mesmo Id. Erro grave
                         _ = Task.Run(() => _logCenter.PMMWpmLgCore(2,
                                     ipAddr,
                                     PMCSystmConstants.OriginWebServer,

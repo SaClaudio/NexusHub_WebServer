@@ -48,9 +48,13 @@
 /*         - Logs de auditoria e rastreabilidade registrados via PMCSystmLogCenter           */
 /*-------------------------------------------------------------------------------------------*/
 
+using Newtonsoft.Json;
+using Org.BouncyCastle.Asn1.Ocsp;
 using PriceMaker_MultTenant.Programs;
 using PriceMaker_MultTenant.SystemIO;
+using PriceMaker_SharedLib;
 using PriceMaker_SharedLib.Models;
+using System.Reflection;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using static PriceMaker_SharedLib.Models.PMCSystmConstants;
@@ -59,7 +63,7 @@ namespace NexusHub_WebServer.Programs
 {
     public class PMCSystmWebSrvProdActions
     {
-        private  readonly PMCSystmCoreDI _coreDI;
+        private readonly PMCSystmCoreDI _coreDI;
         public PMCSystmWebSrvProdActions(PMCSystmCoreDI core)
         {
             _coreDI = core;
@@ -70,7 +74,10 @@ namespace NexusHub_WebServer.Programs
         /* ExecProdActions: Executa ações de produtos para o tenant especificado         */
         /*-------------------------------------------------------------------------------*/
         public async Task<PMCSystmWebSrvProdResp> ExecProdActions(
-                PMCSystmWebSrvProdRequest  actions,
+                string ipAddr,
+                string token,
+                PMCSystmSubsDataRequest actions,
+                PMCSystmSubsConfigRequest configRequest,
                 string tenantName,
                 string userName)
         {
@@ -78,6 +85,26 @@ namespace NexusHub_WebServer.Programs
             callingMethod = "ExecProdActions";
             var formatResp = new PMCSystmWebSrvProdResp();
             string acaoToLower = actions.Acao.ToLower();
+
+            var dictresp = PMCDataWebSrvSessions.GetSession(token);
+            if (dictresp.ReturnCode != "0")
+            {
+                _ = _coreDI.LogCore.PMMWpmLgCore(2,
+                        ipAddr,
+                        OriginWebServer,
+                        callingClass,
+                        callingMethod,
+                        PMCSystmMsgC.PMMmessagecenter(21, 658).Replace("aaa",userName) + token,
+                       _coreDI.Configuration);
+
+                return new PMCSystmWebSrvProdResp
+                {
+                    ProdRetCode = (int)WebServerRetCodes.InternalError,
+                    ProdMessage = PMCSystmMsgC.PMMmessagecenter(59, 7)
+                };
+
+            }
+            var configData = JsonConvert.DeserializeObject<PMCSystmSubsConfigRequest>(dictresp.SubscriberConfigValues);
 
             if (acaoToLower == PMCSystmConstants.WebsrvProdAddItem)            // Se ação de adição de item
             {
@@ -104,16 +131,23 @@ namespace NexusHub_WebServer.Programs
                         ProdMessage = PMCSystmMsgC.PMMmessagecenter(59, 7)
                     };
                 }
-                additempayload = JsonSerializer.Serialize(request);
+                additempayload = System.Text.Json.JsonSerializer.Serialize(request);
             }
+
             
+            // Acionamento do builder
+            var tenantRequest = PMCSystmTenantsIORequestBuilder.MapToTenantIO(actions, configRequest);
+
+            // Agora tenantRequest está pronto para ser passado ao driver de I/O
+
+
             var service = new PMCSystmTenantsIO(_coreDI);
             string dbparm = actions.Acao + "‡" + tenantName + "‡" + actions.ProdKey + "‡" + additempayload;
 
             var resp = await service.PMMIOdriver(dbparm, callingClass, callingMethod, PMCSystmConstants.OriginWebServer);
 
-              
-            
+
+
             if (resp.ItemRetCode == 0)
             {
                 formatResp = MapTenantToProdResp(resp);
@@ -123,7 +157,7 @@ namespace NexusHub_WebServer.Programs
                 formatResp.ProdRetCode = resp.ItemRetCode;
                 formatResp.ProdMessage = resp.ItemMessage;
             }
-                   
+
             return (formatResp);
         }
         /*---------------------------------------------------------------------*/
@@ -162,12 +196,23 @@ namespace NexusHub_WebServer.Programs
         /*  - Aplicar todas as críticas e regras de negócio definidas          */
         /*    para cada campo do DTO                                           */
         /*  - Retornar uma tupla contendo:                                     */
-        /*      • Criticas: lista padronizada [0]=retcode, [1]=mensagem,       */
-        /*        [2]=total de erros, [3..n]=erros detectados                  */
+        /*      • Criticas: lista padronizada [0]=ReturnCode, [1]=Mensagem,    */
+        /*        [2]=Total de erros, [3..n]=erros detalhados                  */
         /*      • Request: o próprio objeto validado                           */
+        /*                                                                     */
+        /*  Detalhamento:                                                      */
+        /*  - O campo ReturnCode indica o status da validação:                 */
+        /*      0 → sucesso, sem inconsistências                               */
+        /*      1 → inconsistências encontradas                                */
+        /*      9 → erro inesperado                                            */
+        /*  - A mensagem descreve o resultado de forma textual                 */
+        /*  - O total de erros facilita a leitura e o controle de fluxo        */
+        /*  - A lista de erros detalha cada crítica aplicada                   */
+        /*                                                                     */
         /*---------------------------------------------------------------------*/
-        public static (List<string> Criticas, PMCSystmWebSrvProdRequest Request)
-            Validar(PMCSystmWebSrvProdRequest body)
+
+        public static (List<string> Criticas, PMCSystmSubsDataRequest Request)
+                Validar(PMCSystmSubsDataRequest body)
         {
             var erros = new List<string>();
             int returnCode = 0;
@@ -175,56 +220,53 @@ namespace NexusHub_WebServer.Programs
 
             try
             {
-                // Acao
-                if (string.IsNullOrWhiteSpace(body.Acao))
-                    erros.Add("Campo 'Acao' não informado.");
 
                 // ProdKey
                 if (!string.IsNullOrEmpty(body.ProdKey))
                     erros.Add("Campo 'ProdKey' deve ser nulo.");
 
                 // Tipo
-                if (string.IsNullOrWhiteSpace(body.Tipo) || (body.Tipo != "1" && body.Tipo != "2"))
-                    erros.Add("Campo 'Tipo' obrigatório. Valores aceitos: 1 (mercadoria) ou 2 (serviço).");
-
-                // Tipo = 1 → precisa ter Sku OU Barcode
-                if (body.Tipo == "1")
+                // Valida se Tipo é numérico
+                var onlyTipo = new List<string>
+                        {
+                            returnCode.ToString(),
+                            message,
+                            erros.Count.ToString()
+                        };
+                if (!int.TryParse(body.Tipo, out var tipoNumerico))
                 {
-                    bool temSku = !string.IsNullOrEmpty(body.Sku) &&
-                                  Regex.IsMatch(body.Sku, @"^[A-Za-z0-9]{1,5}(-[A-Za-z0-9]{1,5}){3}$");
-
-                    bool temBarcode = !string.IsNullOrEmpty(body.Barcode) &&
-                                      Regex.IsMatch(body.Barcode, @"^\d{1,13}$");
-
-                    if (!temSku && !temBarcode)
-                        erros.Add("Para Tipo=1 é obrigatório informar Sku ou Barcode.");
+                    message = "Inconsistências encontradas.";
+                    returnCode = 1;
+                    erros.Add("Campo 'Tipo' inválido. Deve ser numérico (1 = mercadoria, 2 = serviço).");
+                    onlyTipo.AddRange(erros);
+                    return (onlyTipo, body);
                 }
 
-                // NCM
-                if (!string.IsNullOrEmpty(body.CodigoNcm) && !Regex.IsMatch(body.CodigoNcm, @"^\d{1,8}$"))
-                    erros.Add("Campo 'NCM' deve ser numérico com até 8 dígitos.");
+                switch (tipoNumerico)
+                {
+                    case PMCSystmFlags.Pm_appl_itemtipoproduto: // Mercadoria
+                        ValidarMercadoria(body, erros);
+                        break;
 
-                // Comissão, Desconto, MargemBruta
-                ValidarValorMonetario(body.Comissao, "Comissao", erros);
-                ValidarValorMonetario(body.Desconto, "Desconto", erros);
-                ValidarValorMonetario(body.MargemBruta, "MargemBruta", erros);
+                    case PMCSystmFlags.Pm_appl_itemtiposervico: // Serviço
+                        ValidarServico(body, erros);
+                        break;
 
-                // Descrição
+                    default:
+                        erros.Add("Campo 'Tipo' inválido. Valores aceitos: 1 (mercadoria) ou 2 (serviço).");
+                        message = "Inconsistências encontradas.";
+                        returnCode = 1;
+                        erros.Add("Campo 'Tipo' inválido. Deve ser numérico (1 = mercadoria, 2 = serviço).");
+                        onlyTipo.AddRange(erros);
+                        return (onlyTipo, body);
+                }
+
+
+                // Descrição (comum a ambos)
                 if (string.IsNullOrWhiteSpace(body.Descricao))
                     erros.Add("Campo 'Descricao' obrigatório.");
                 else if (body.Descricao.Length > 750)
                     erros.Add("Campo 'Descricao' excede 750 caracteres.");
-
-                // Marca
-                if (body.Tipo == "2" && body.Marca != "*")
-                    erros.Add("Campo 'Marca' deve ser '*' quando Tipo=2.");
-                else if (!string.IsNullOrEmpty(body.Marca) && body.Marca.Length > 100)
-                    erros.Add("Campo 'Marca' excede 100 caracteres.");
-
-                // Quantidade adquirida
-                if (!string.IsNullOrEmpty(body.QuantidadeAdquirida) && !Regex.IsMatch(body.QuantidadeAdquirida, @"^\d{1,5}$"))
-                    erros.Add("Campo 'QuantidadeAdquirida' deve ser numérico entre 0 e 99999.");
-
                 // SKU
                 if (!string.IsNullOrEmpty(body.Sku))
                 {
@@ -235,30 +277,40 @@ namespace NexusHub_WebServer.Programs
                 }
                 else
                 {
-                    if (!string.IsNullOrEmpty(body.Descricao))
+                    // Verifica características
+                    bool char1 = !string.IsNullOrEmpty(body.Caracteristica1);
+                    bool char2 = !string.IsNullOrEmpty(body.Caracteristica2);
+                    bool char3 = !string.IsNullOrEmpty(body.Caracteristica3);
+                    bool char4 = !string.IsNullOrEmpty(body.Caracteristica4);
+
+                    if (char1 && char2 && char3 && char4)
                     {
+                        // Monta SKU a partir das características
+                        body.Sku = $"{body.Caracteristica1}-{body.Caracteristica2}-{body.Caracteristica3}-{body.Caracteristica4}";
+                    }
+                    else if (!char1 && !char2 && !char3 && !char4)
+                    {
+                        // Nenhuma característica informada → gera a partir da descrição
                         var partes = body.Descricao.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-                        var skuGerado = string.Join("-", partes.Take(4).Select(p => p.Substring(0, Math.Min(5, p.Length))));
-                        erros.Add($"Campo 'Sku' não informado. Gerado automaticamente: {skuGerado}");
+                        var elementos = partes.Take(4).Select(p => p.Substring(0, Math.Min(5, p.Length))).ToArray();
+
+                        body.Sku = string.Join("-", elementos);
+
+                        // Preenche características com os elementos gerados
+                        body.Caracteristica1 = elementos.ElementAtOrDefault(0);
+                        body.Caracteristica2 = elementos.ElementAtOrDefault(1);
+                        body.Caracteristica3 = elementos.ElementAtOrDefault(2);
+                        body.Caracteristica4 = elementos.ElementAtOrDefault(3);
+
+                        erros.Add($"Campo 'Sku' não informado. Gerado automaticamente: {body.Sku}");
+                    }
+                    else
+                    {
+                        // Caso parcial: erro
+                        erros.Add("Se uma característica for informada, todas as quatro devem ser preenchidas.");
                     }
                 }
 
-                // Unidade
-                if (!string.IsNullOrEmpty(body.Unidade) && body.Unidade.Length > 8)
-                    erros.Add("Campo 'Unidade' deve ter no máximo 8 caracteres.");
-
-                // ValorTotalAquisicao
-                if (!string.IsNullOrEmpty(body.ValorTotalAquisicao))
-                {
-                    if (!Regex.IsMatch(body.ValorTotalAquisicao, @"^\d{1,9},\d{2}$"))
-                        erros.Add("Campo 'ValorTotalAquisicao' deve estar no formato 999999999,99.");
-                }
-
-                // Tipo=2 → NCM deve ser "*"
-                if (body.Tipo == "2" && body.CodigoNcm != "*")
-                    erros.Add("Campo 'NCM' deve ser '*' quando Tipo=2.");
-
-                // Resultado final
                 if (erros.Count > 0)
                 {
                     returnCode = 1;
@@ -271,20 +323,82 @@ namespace NexusHub_WebServer.Programs
                 message = $"Erro inesperado: {ex.Message}";
             }
 
-            // Monta lista padronizada
             var criticas = new List<string>
                 {
-                    returnCode.ToString(),   // [0] ReturnCode
-                    message,                 // [1] Mensagem
-                    erros.Count.ToString()   // [2] Total de erros
+                    returnCode.ToString(),
+                    message,
+                    erros.Count.ToString()
                 };
-            criticas.AddRange(erros);    // [3..n] Erros
+            criticas.AddRange(erros);
 
             return (criticas, body);
         }
 
         /*---------------------------------------------------------------------*/
-        /*                  Valida valores monetários                          */
+        /*  Validações específicas para mercadoria (Tipo=1)                    */
+        /*---------------------------------------------------------------------*/
+        private static void ValidarMercadoria(PMCSystmSubsDataRequest body, List<string> erros)
+        {
+            // SKU ou Barcode obrigatórios
+            bool temSku = !string.IsNullOrEmpty(body.Sku) &&
+                          Regex.IsMatch(body.Sku, @"^[A-Za-z0-9]{1,5}(-[A-Za-z0-9]{1,5}){3}$");
+
+            bool temBarcode = !string.IsNullOrEmpty(body.Barcode) &&
+                              Regex.IsMatch(body.Barcode, @"^\d{1,13}$");
+
+            if (!temSku && !temBarcode)
+                erros.Add("Para Tipo=1 é obrigatório informar Sku ou Barcode.");
+
+            // NCM
+            if (!string.IsNullOrEmpty(body.CodigoNcm) && !Regex.IsMatch(body.CodigoNcm, @"^\d{1,8}$"))
+                erros.Add("Campo 'NCM' deve ser numérico com até 8 dígitos.");
+
+            // Comissão, Desconto, MargemBruta
+            ValidarValorMonetario(body.Comissao, "Comissao", erros);
+            ValidarValorMonetario(body.Desconto, "Desconto", erros);
+            ValidarValorMonetario(body.MargemBruta, "MargemBruta", erros);
+
+            // Marca
+            if (!string.IsNullOrEmpty(body.Marca) && body.Marca.Length > 100)
+                erros.Add("Campo 'Marca' excede 100 caracteres.");
+
+            // Quantidade adquirida
+            if (!string.IsNullOrEmpty(body.QuantidadeAdquirida) && !Regex.IsMatch(body.QuantidadeAdquirida, @"^\d{1,5}$"))
+                erros.Add("Campo 'QuantidadeAdquirida' deve ser numérico entre 0 e 99999.");
+
+            
+
+            // Unidade
+            if (!string.IsNullOrEmpty(body.Unidade) && body.Unidade.Length > 8)
+                erros.Add("Campo 'Unidade' deve ter no máximo 8 caracteres.");
+
+            // CustoDireto → custo total de aquisição
+            if (!string.IsNullOrEmpty(body.CustoDireto) && !Regex.IsMatch(body.CustoDireto, @"^\d{1,9},\d{2}$"))
+                erros.Add("Campo 'CustoDireto' deve estar no formato 999999999,99.");
+        }
+
+        /*---------------------------------------------------------------------*/
+        /*  Validações específicas para serviço (Tipo=2)                       */
+        /*---------------------------------------------------------------------*/
+        private static void ValidarServico(PMCSystmSubsDataRequest body, List<string> erros)
+        {
+            // Marca obrigatoriamente "*"
+            if (body.Marca != "*")
+                erros.Add("Campo 'Marca' deve ser '*' quando Tipo=2.");
+
+            // NCM obrigatoriamente "*"
+            if (body.CodigoNcm != "*")
+                erros.Add("Campo 'NCM' deve ser '*' quando Tipo=2.");
+
+            // CustoDireto → custo hora/homem
+            if (string.IsNullOrWhiteSpace(body.CustoDireto))
+                erros.Add("Campo 'CustoDireto' obrigatório quando Tipo=2.");
+            else if (!Regex.IsMatch(body.CustoDireto, @"^\d{1,3},\d{2}$"))
+                erros.Add("Campo 'CustoDireto' deve estar no formato 000,00 (máximo 999,99).");
+        }
+
+        /*---------------------------------------------------------------------*/
+        /*  Valida valores monetários                                          */
         /*---------------------------------------------------------------------*/
         private static void ValidarValorMonetario(string? valor, string campo, List<string> erros)
         {

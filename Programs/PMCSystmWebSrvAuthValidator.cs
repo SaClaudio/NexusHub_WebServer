@@ -42,6 +42,7 @@
 namespace NexusHub_WebServer.Programs
 {
     using Microsoft.EntityFrameworkCore.Storage.ValueConversion.Internal;
+    using Newtonsoft.Json;
     using Newtonsoft.Json.Linq;
     using Org.BouncyCastle.Asn1.Ocsp;
     using Org.BouncyCastle.Asn1.Pkcs;
@@ -193,8 +194,8 @@ namespace NexusHub_WebServer.Programs
                     }
                     else
                     {
-                        var dictresp = PMCDataWebSrvSessions.GetTenantnm(tokenresultCheck.AuthTokenOriginal);
-                        if (dictresp[0] != "0")
+                        var dictresp = PMCDataWebSrvSessions.GetSession(tokenresultCheck.AuthTokenOriginal);
+                        if (dictresp.ReturnCode != "0")
                         {
                             _ = _coreDI.LogCore.PMMWpmLgCore(2,
                                     ipaddr,
@@ -212,8 +213,8 @@ namespace NexusHub_WebServer.Programs
                             };
 
                         }
-                        tenantName = dictresp[1];     // Se token existe, pega tenantName registrado para esse token no dicionário de sessões do web server para usar adiante
-                        userName = dictresp[2];
+                        tenantName = dictresp.Tenantnm;     // Se token existe, pega tenantName registrado para esse token no dicionário de sessões do web server para usar adiante
+                        userName = dictresp.UserName;
                     }
 
                 }
@@ -400,35 +401,43 @@ namespace NexusHub_WebServer.Programs
                                     AuthMessage = PMCSystmMsgC.PMMmessagecenter(59, 23)
                                 };
                         }
-                        /*---------- Verifica se já existe uma sessão web server prévia ----------*/
                         
-                        string ipaddrDict = PMCDataWebSrvSessions.GetIpByToken(tokenresultCheck.AuthTokenOriginal);
+                        /*---------- Obtem dados de configuração do assinante no tenant de configuração do mesmo ---------*/
+                        string dbparm = PMCSystmConstants.TenantIOGetConfig + "‡" + tenantName + "‡" + "Nihil";
+                        var driver = new PMCSystmTenantsIO(_coreDI);
+                        var tenantIOResp = await driver.PMMIOdriver(dbparm, className, methodName);
 
-                        if (!string.IsNullOrEmpty(ipaddrDict))          // Se já existe um token registrado, verifica se IP é o mesmo. Se for o mesmo, mantém sessão. Se for diferente, bloqueia acesso (possível roubo de token)
+                        if (tenantIOResp.ItemRetCode != 0)
                         {
-                            if (!PMCDataWebSrvSessions.ValidateTokenAndIp(tokenresultCheck.AuthTokenOriginal, request.AuthIpaddr))   /* Se token existe mas IP é diferente, bloqueia acesso */
+                            return new PMCSystmWebSrvAuthResp
                             {
-                                _ = _coreDI.LogCore.PMMWpmLgCore(3,
-                                   ipaddr,
-                                   OriginWebServer,
-                                   className,
-                                   methodName,
-                                   PMCSystmMsgC.PMMmessagecenter(21, 637) + userName + " / " + request.AuthIpaddr,
-                                  _coreDI.Configuration);
-                                return new PMCSystmWebSrvAuthResp
-                                {
-                                    AuthCode = (int)WebServerRetCodes.TokenInvalidMismatch,
-                                    AuthMessage = PMCSystmMsgC.PMMmessagecenter(59, 2)
-                                };
-                            }                            
+                                AuthCode = (int)WebServerRetCodes.InternalError,
+                                AuthMessage = PMCSystmMsgC.PMMmessagecenter(59, 7)
+                            };
                         }
+
+                        var subscriberconfig = new PMCSystmSubsConfigRequest
+                        {
+                            TenantCnf_websrvpswd = null,                            // Senha do Web Service sempre nula
+                            TenantCnf_StateId = tenantIOResp.ConfigStateId,         //  Id do Estado a que pertence o assinante
+                            TenantCnf_CityId = tenantIOResp.ConfigCityId,           //  Id da Cidade a que pertence o assinante
+                            TenantCnf_RamonegId = tenantIOResp.ConfigRamonegId,     //  Id da Ramo de Negócio do assinante
+                            TenantCnf_RamosatvId = tenantIOResp.ConfigRamosatvId,   //  Id da Ramo de Atividade do assinante
+                            TenantCnf_Margem = tenantIOResp.ConfigMargem,           // Margem de lucro bruto configurada no tenant de configuração
+                            TenantCnf_TaxRegime = tenantIOResp.ConfigTaxRegime,     // Regime tributário do assinante
+                            TenantCnf_Comission = tenantIOResp.ConfigComission,     // Comissão configurada no tenant de configuração
+                            TenantCnf_Cost = tenantIOResp.ConfigCost,               // Custo fixo médio mensal configurado no tenant de configuração   
+                            TenantCnf_SalesAvg = tenantIOResp.ConfigSalesAvg        // Vendas 
+                        };
+
                         /*---------- Cria ou  atualiza entrada da sessão no dicionário de sessão web server ----------*/
                         var websrvSessDict = PMCDataWebSrvSessions.AddToken(tokenresultCheck.AuthTokenOriginal,
                         request.AuthIpaddr,
                         tenantName,
                         userName,
                         subtype,
-                        userId);
+                        userId,
+                        JsonConvert.SerializeObject(subscriberconfig));
 
                         if (websrvSessDict[0] != "0")           // Se retornou erro
                         {
