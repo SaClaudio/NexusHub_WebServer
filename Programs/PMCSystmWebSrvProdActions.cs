@@ -54,6 +54,7 @@ using PriceMaker_MultTenant.Programs;
 using PriceMaker_MultTenant.SystemIO;
 using PriceMaker_SharedLib;
 using PriceMaker_SharedLib.Models;
+using System.Globalization;
 using System.Reflection;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -85,26 +86,6 @@ namespace NexusHub_WebServer.Programs
             callingMethod = "ExecProdActions";
             var formatResp = new PMCSystmWebSrvProdResp();
             string acaoToLower = actions.Acao.ToLower();
-
-            var dictresp = PMCDataWebSrvSessions.GetSession(token);
-            if (dictresp.ReturnCode != "0")
-            {
-                _ = _coreDI.LogCore.PMMWpmLgCore(2,
-                        ipAddr,
-                        OriginWebServer,
-                        callingClass,
-                        callingMethod,
-                        PMCSystmMsgC.PMMmessagecenter(21, 658).Replace("aaa",userName) + token,
-                       _coreDI.Configuration);
-
-                return new PMCSystmWebSrvProdResp
-                {
-                    ProdRetCode = (int)WebServerRetCodes.InternalError,
-                    ProdMessage = PMCSystmMsgC.PMMmessagecenter(59, 7)
-                };
-
-            }
-            var configData = JsonConvert.DeserializeObject<PMCSystmSubsConfigRequest>(dictresp.SubscriberConfigValues);
 
             if (acaoToLower == PMCSystmConstants.WebsrvProdAddItem)            // Se ação de adição de item
             {
@@ -138,13 +119,42 @@ namespace NexusHub_WebServer.Programs
             // Acionamento do builder
             var tenantRequest = PMCSystmTenantsIORequestBuilder.MapToTenantIO(actions, configRequest);
 
+            tenantRequest.TenantApp_TenantName = tenantName;
+
+            // Determina se deve calcular os preços finais dos produtos com base na configuração do tenant
+
+            if (tenantRequest.TenantApp_CalcularPrecoFinal)         // Se deve calcular preço final
+            {
+                var buildParmCalcPreco = PMCSystmTenantsIORequestBuilder.MapToCalcPrecos(tenantRequest, configRequest);
+                var calcService = new PMCSystmCalP(_coreDI.Configuration);
+                buildParmCalcPreco.UsaImpostoDefaultServico = true;
+                buildParmCalcPreco.AcessaBdImpostos = true;
+                var calcResult = await calcService.PMMcalcpriceAsync(buildParmCalcPreco);
+                switch (calcResult.CodigoRetorno)
+                {
+                    case "0":
+                        break;
+                    case "9":
+                        return new PMCSystmWebSrvProdResp
+                        {
+                            ProdRetCode = (int)WebServerRetCodes.InternalError,
+                            ProdMessage = PMCSystmMsgC.PMMmessagecenter(59, 7)
+                        };
+                    default:
+                        return new PMCSystmWebSrvProdResp
+                        {
+                            ProdRetCode = (int)WebServerRetCodes.ProdDataInvld,
+                            ProdMessage = calcResult.MensagemErro
+                        };
+                }
+                tenantRequest.TenantApp_Pcfv = calcResult.PcfvDecimal.ToString();
+            }
+
             // Agora tenantRequest está pronto para ser passado ao driver de I/O
 
-
             var service = new PMCSystmTenantsIO(_coreDI);
-            string dbparm = actions.Acao + "‡" + tenantName + "‡" + actions.ProdKey + "‡" + additempayload;
-
-            var resp = await service.PMMIOdriver(dbparm, callingClass, callingMethod, PMCSystmConstants.OriginWebServer);
+            
+            var resp = await service.PMMIOdriver(tenantRequest, callingClass, callingMethod, PMCSystmConstants.OriginWebServer);
 
 
 
@@ -227,17 +237,19 @@ namespace NexusHub_WebServer.Programs
 
                 // Tipo
                 // Valida se Tipo é numérico
-                var onlyTipo = new List<string>
-                        {
-                            returnCode.ToString(),
-                            message,
-                            erros.Count.ToString()
-                        };
+
                 if (!int.TryParse(body.Tipo, out var tipoNumerico))
                 {
                     message = "Inconsistências encontradas.";
                     returnCode = 1;
                     erros.Add("Campo 'Tipo' inválido. Deve ser numérico (1 = mercadoria, 2 = serviço).");
+
+                    var onlyTipo = new List<string>
+                    {
+                        returnCode.ToString(),
+                        message,
+                        erros.Count.ToString()
+                    };
                     onlyTipo.AddRange(erros);
                     return (onlyTipo, body);
                 }
@@ -253,10 +265,16 @@ namespace NexusHub_WebServer.Programs
                         break;
 
                     default:
-                        erros.Add("Campo 'Tipo' inválido. Valores aceitos: 1 (mercadoria) ou 2 (serviço).");
                         message = "Inconsistências encontradas.";
                         returnCode = 1;
-                        erros.Add("Campo 'Tipo' inválido. Deve ser numérico (1 = mercadoria, 2 = serviço).");
+                        erros.Add("Campo 'Tipo' inválido. Valores aceitos: 1 (mercadoria) ou 2 (serviço).");
+
+                        var onlyTipo = new List<string>
+                        {
+                            returnCode.ToString(),
+                            message,
+                            erros.Count.ToString()
+                        };
                         onlyTipo.AddRange(erros);
                         return (onlyTipo, body);
                 }
@@ -311,6 +329,16 @@ namespace NexusHub_WebServer.Programs
                     }
                 }
 
+                // CustoDireto → custo total de aquisição
+                if (!string.IsNullOrEmpty(body.CustoDireto) && !Regex.IsMatch(body.CustoDireto, @"^\d{1,9},\d{2}$"))
+                    erros.Add("Campo 'CustoDireto' deve estar no formato 999999999,99.");
+
+                // Comissão, Desconto, MargemBruta
+                ValidarValorMonetario(body.Comissao, "Comissao", erros);
+                ValidarValorMonetario(body.Desconto, "Desconto", erros);
+                ValidarValorMonetario(body.MargemBruta, "MargemBruta", erros);
+
+
                 if (erros.Count > 0)
                 {
                     returnCode = 1;
@@ -353,11 +381,6 @@ namespace NexusHub_WebServer.Programs
             if (!string.IsNullOrEmpty(body.CodigoNcm) && !Regex.IsMatch(body.CodigoNcm, @"^\d{1,8}$"))
                 erros.Add("Campo 'NCM' deve ser numérico com até 8 dígitos.");
 
-            // Comissão, Desconto, MargemBruta
-            ValidarValorMonetario(body.Comissao, "Comissao", erros);
-            ValidarValorMonetario(body.Desconto, "Desconto", erros);
-            ValidarValorMonetario(body.MargemBruta, "MargemBruta", erros);
-
             // Marca
             if (!string.IsNullOrEmpty(body.Marca) && body.Marca.Length > 100)
                 erros.Add("Campo 'Marca' excede 100 caracteres.");
@@ -372,9 +395,7 @@ namespace NexusHub_WebServer.Programs
             if (!string.IsNullOrEmpty(body.Unidade) && body.Unidade.Length > 8)
                 erros.Add("Campo 'Unidade' deve ter no máximo 8 caracteres.");
 
-            // CustoDireto → custo total de aquisição
-            if (!string.IsNullOrEmpty(body.CustoDireto) && !Regex.IsMatch(body.CustoDireto, @"^\d{1,9},\d{2}$"))
-                erros.Add("Campo 'CustoDireto' deve estar no formato 999999999,99.");
+            
         }
 
         /*---------------------------------------------------------------------*/
@@ -402,9 +423,41 @@ namespace NexusHub_WebServer.Programs
         /*---------------------------------------------------------------------*/
         private static void ValidarValorMonetario(string? valor, string campo, List<string> erros)
         {
-            if (!string.IsNullOrEmpty(valor) && !Regex.IsMatch(valor, @"^\d{1,3},\d{2}$"))
-                erros.Add($"Campo '{campo}' deve estar no formato 000,00 (máximo 999,99).");
+            if (string.IsNullOrEmpty(valor))
+            {
+                erros.Add($"Campo '{campo}' obrigatório. Valor não pode ser nulo ou vazio.");
+                return;
+            }
+
+            // Regra 2: tamanho máximo
+            if (valor.Length > 6)
+            {
+                erros.Add($"Campo '{campo}' inválido. Máximo permitido é 6 caracteres (formato até 000,00).");
+                return;
+            }
+
+            // Regra 1: deve ter vírgula como separador decimal e exatamente 2 casas decimais
+            if (!Regex.IsMatch(valor, @"^\d{1,3},\d{2}$"))
+            {
+                erros.Add($"Campo '{campo}' inválido. Deve estar no formato N,NN ou NN,NN (até 000,00).");
+                return;
+            }
+
+            // Regra 3: não pode ser apenas ,00
+            if (valor.StartsWith(","))
+            {
+                erros.Add($"Campo '{campo}' inválido. Não pode ser apenas ',00'. Deve conter parte inteira.");
+                return;
+            }
+
+            // Testa se é decimal válido em pt-BR
+            if (!decimal.TryParse(valor, NumberStyles.Number, new CultureInfo("pt-BR"), out _))
+            {
+                erros.Add($"Campo '{campo}' inválido. Valor não pôde ser convertido para decimal.");
+            }
         }
+
+
 
     }
 }

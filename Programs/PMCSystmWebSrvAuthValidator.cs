@@ -403,9 +403,13 @@ namespace NexusHub_WebServer.Programs
                         }
                         
                         /*---------- Obtem dados de configuração do assinante no tenant de configuração do mesmo ---------*/
-                        string dbparm = PMCSystmConstants.TenantIOGetConfig + "‡" + tenantName + "‡" + "Nihil";
                         var driver = new PMCSystmTenantsIO(_coreDI);
-                        var tenantIOResp = await driver.PMMIOdriver(dbparm, className, methodName);
+                        var tenantRequest = new PMCSystmTenantsIORequest
+                        {
+                            TenantApp_Action = PMCSystmConstants.TenantIOGetConfig,
+                            TenantApp_TenantName = tenantName
+                        };
+                        var tenantIOResp = await driver.PMMIOdriver(tenantRequest, className, methodName);
 
                         if (tenantIOResp.ItemRetCode != 0)
                         {
