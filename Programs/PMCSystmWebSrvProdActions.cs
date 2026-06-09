@@ -124,12 +124,12 @@ namespace NexusHub_WebServer.Programs
                         
             // Acionamento do builder para montar o request ao tenantsIO
 
-            var tenantRequest = PMCSystmTenantsIORequestBuilder.MapToTenantIO(requestData, configRequest);
+            var tenantRequest = PMCSystmIOTenantsRequestBuilder.MapToTenantIO(requestData, configRequest);
             
-            tenantRequest.TenantApp_AcqCost = formatcost.ToString(CultureInfo.InvariantCulture);
-            tenantRequest.TenantApp_MarginBrute = formatmarg.ToString(CultureInfo.InvariantCulture);
-            tenantRequest.TenantApp_Commission = formatcomiss.ToString(CultureInfo.InvariantCulture);
-            tenantRequest.TenantApp_Discount = formatdesc.ToString(CultureInfo.InvariantCulture);
+            tenantRequest.TenantApp_AcqCost = formatcost;
+            tenantRequest.TenantApp_MarginBrute = formatmarg;
+            tenantRequest.TenantApp_Commission = formatcomiss;
+            tenantRequest.TenantApp_Discount = formatdesc;
             tenantRequest.TenantApp_TenantName = tenantName;
 
             // Determina se deve calcular os preços finais dos produtos com base na configuração do tenant
@@ -212,7 +212,7 @@ namespace NexusHub_WebServer.Programs
         /*---------------------------------------------------------------------*/
         /*                      Monta resposta do metodo                       */
         /*---------------------------------------------------------------------*/
-        public static PMCSystmWebSrvProdResp MapTenantToProdResp(PMCSystmTenantsIOResp tenantResp)
+        public static PMCSystmWebSrvProdResp MapTenantToProdResp(PMCSystmIOTenantsResp tenantResp)
         {
             return new PMCSystmWebSrvProdResp
             {

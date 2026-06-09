@@ -240,11 +240,11 @@ namespace NexusHub_WebServer.Programs
                         /*---------- Acessa assinante em Identity pelo keyid que vem no header do token -----------*/
 
 
-                        var _identityIO = new PMCSystmIdentityIO(_coreDI);
+                        var _IOIdentity = new PMCSystmIOIdentity(_coreDI);
                         dbParm = "1" + "‡" + userId;
 
                         // Chama o driver de Identity
-                        var (identityuser, identityrc) = await _identityIO.PMMIOdriver(dbParm,
+                        var (identityuser, identityrc) = await _IOIdentity.PMMIOdriver(dbParm,
                             className,
                             methodName,
                             OriginWebServer);
